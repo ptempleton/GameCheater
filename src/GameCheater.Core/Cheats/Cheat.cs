@@ -40,6 +40,19 @@ public abstract class Cheat : INotifyPropertyChanged
         }
     }
 
+    /// <summary>Optional global hotkey that toggles this cheat, e.g. "F1" (null = none).</summary>
+    private string? _hotKey;
+    public string? HotKey
+    {
+        get => _hotKey;
+        set
+        {
+            if (_hotKey == value) return;
+            _hotKey = value;
+            OnPropertyChanged();
+        }
+    }
+
     /// <summary>Apply the cheat. Resolves its address now, applies, and records undo state.</summary>
     public void Enable()
     {

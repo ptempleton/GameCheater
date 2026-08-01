@@ -53,7 +53,7 @@
                         <ItemsControl ItemsSource="{Binding Cheats}">
                           <ItemsControl.ItemTemplate>
                             <DataTemplate x:DataType="vm:CheatViewModel">
-                              <Grid ColumnDefinitions="Auto,*,Auto,Auto" Margin="4,4">
+                              <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto" Margin="4,4">
                                 <TextBlock Grid.Column="0" Text="⚡" Foreground="#FFD24D"
                                            VerticalAlignment="Center" Margin="0,0,8,0"/>
                                 <StackPanel Grid.Column="1" VerticalAlignment="Center">
@@ -63,7 +63,10 @@
                                 </StackPanel>
                                 <TextBox Grid.Column="2" Width="88" Margin="8,0" VerticalAlignment="Center"
                                          IsVisible="{Binding HasValue}" Text="{Binding ValueText}" PlaceholderText="value"/>
-                                <ToggleSwitch Grid.Column="3" VerticalAlignment="Center"
+                                <ComboBox Grid.Column="3" Width="70" Margin="6,0" VerticalAlignment="Center"
+                                          ItemsSource="{Binding HotKeyOptions}" SelectedItem="{Binding HotKey}"
+                                          ToolTip.Tip="Global hotkey to toggle this cheat"/>
+                                <ToggleSwitch Grid.Column="4" VerticalAlignment="Center"
                                               OnContent="On" OffContent="Off" IsChecked="{Binding IsEnabled}"/>
                               </Grid>
                             </DataTemplate>
