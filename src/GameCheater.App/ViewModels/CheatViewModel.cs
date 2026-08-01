@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using GameCheater.App.Services;
 using GameCheater.Core.Cheats;
 
 namespace GameCheater.App.ViewModels;
@@ -13,11 +14,13 @@ public sealed class CheatViewModel : ViewModelBase
 {
     private readonly Cheat _cheat;
     private readonly Action<string> _report;
+    private readonly Action? _onHotKeyChanged;
 
-    public CheatViewModel(Cheat cheat, Action<string> report)
+    public CheatViewModel(Cheat cheat, Action<string> report, Action? onHotKeyChanged = null)
     {
         _cheat = cheat;
         _report = report;
+        _onHotKeyChanged = onHotKeyChanged;
         _cheat.PropertyChanged += OnCheatChanged;
     }
 
@@ -25,6 +28,28 @@ public sealed class CheatViewModel : ViewModelBase
     public string Category => _cheat.Category;
     public string? Description => _cheat.Description;
     public bool HasValue => _cheat is IValueCheat;
+
+    public IReadOnlyList<string> HotKeyOptions => HotkeyManager.Keys;
+
+    /// <summary>The raw assigned key (e.g. "F1"), or null. Used to build global registrations.</summary>
+    public string? HotKeyKey => _cheat.HotKey;
+
+    /// <summary>Hotkey as shown/selected in the UI dropdown ("None" == unassigned).</summary>
+    public string HotKey
+    {
+        get => _cheat.HotKey ?? "None";
+        set
+        {
+            var key = value is "None" or "" ? null : value;
+            if (_cheat.HotKey == key) return;
+            _cheat.HotKey = key;
+            OnPropertyChanged();
+            _onHotKeyChanged?.Invoke();
+        }
+    }
+
+    /// <summary>Flip the cheat from a hotkey press (already marshaled to the UI thread).</summary>
+    public void ToggleFromHotkey() => IsEnabled = !IsEnabled;
 
     public bool IsEnabled
     {

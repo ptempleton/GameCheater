@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using GameCheater.App.Models;
+using GameCheater.App.Services;
 using GameCheater.Core.Cheats;
 using GameCheater.Core.Definitions;
 using GameCheater.Core.Distribution;
@@ -14,6 +15,7 @@ namespace GameCheater.App.ViewModels;
 public sealed class MainViewModel : ViewModelBase
 {
     private readonly CheatRepositoryClient _repo = new();
+    private readonly HotkeyManager _hotkeys = new();
     private Trainer? _trainer;
 
     public ObservableCollection<GameDef> Games { get; } = new();
@@ -32,15 +34,27 @@ public sealed class MainViewModel : ViewModelBase
         Capture = new CaptureViewModel(
             memory: () => _trainer?.Memory,
             trainer: () => _trainer,
-            addCheat: cheat => Cheats.Add(new CheatViewModel(cheat, s => Status = s)),
+            addCheat: cheat => Cheats.Add(Wrap(cheat)),
             gameName: () => _trainer?.Game ?? SelectedGame?.Display ?? "Game");
 
-        // Keep the grouped view in sync as cheats are added/cleared.
-        Cheats.CollectionChanged += (_, _) => RebuildGroups();
+        // Keep the grouped view + hotkeys in sync as cheats are added/cleared.
+        Cheats.CollectionChanged += (_, _) => { RebuildGroups(); SyncHotkeys(); };
 
         // Start from the embedded baseline + whatever we cached last run, then pull fresh.
         RebuildGames(_repo.LoadCached());
         _ = RefreshAsync();
+    }
+
+    /// <summary>Wrap a cheat for the UI, routing status + hotkey changes back here.</summary>
+    private CheatViewModel Wrap(Cheat cheat) => new(cheat, s => Status = s, SyncHotkeys);
+
+    /// <summary>Register global hotkeys for every cheat that has one assigned.</summary>
+    private void SyncHotkeys()
+    {
+        var bindings = Cheats
+            .Where(c => !string.IsNullOrEmpty(c.HotKeyKey))
+            .Select(c => (c.HotKeyKey!, (Action)c.ToggleFromHotkey));
+        _hotkeys.SetBindings(bindings);
     }
 
     /// <summary>Rebuild the collapsible category groups shown in the Cheats tab.</summary>
@@ -136,7 +150,7 @@ public sealed class MainViewModel : ViewModelBase
         };
 
         foreach (var cheat in _trainer.Cheats)
-            Cheats.Add(new CheatViewModel(cheat, s => Status = s));
+            Cheats.Add(Wrap(cheat));
 
         Status = Cheats.Count > 0
             ? $"{SelectedGame.Display}: {Cheats.Count} cheats loaded. Start the game, then Start Engine."
@@ -197,7 +211,7 @@ public sealed class MainViewModel : ViewModelBase
             foreach (var cheat in loaded.Cheats)
             {
                 _trainer.Add(cheat);                                  // register so the freeze loop drives it
-                Cheats.Add(new CheatViewModel(cheat, s => Status = s));
+                Cheats.Add(Wrap(cheat));
             }
 
             var lines = new List<string>
