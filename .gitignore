@@ -1,0 +1,37 @@
+# .NET build output
+bin/
+obj/
+[Rr]elease/
+[Dd]ebug/
+*.user
+*.suo
+
+# Rider / VS
+.idea/
+.vs/
+*.DotSettings.user
+
+# Publish output
+publish/
+artifacts/
+
+# OS cruft
+.DS_Store
+Thumbs.db
+
+# User-supplied cheat tables (BYO model — never commit other people's .CT files)
+# NOTE: leading slash anchors to repo root — an un-anchored `tables/` also matches the
+# SOURCE folder src/GameCheater.Core/Tables/ on case-insensitive filesystems (macOS),
+# which silently dropped that code from git. Keep this anchored.
+/tables/
+*.CT
+
+# User-supplied / built trainer binaries (rule #3 — kept in app-data, never in the repo)
+/Cheats/
+*.dll
+
+# Dropped screenshots / images at the repo root (references, not repo content)
+/*.png
+/*.jpg
+/*.jpeg
+/*.gif

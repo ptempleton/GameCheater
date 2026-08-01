@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Targets plain net10.0 (not net10.0-windows) on purpose: this lets the project
+    COMPILE on macOS/Linux while you develop. The Win32 P/Invoke calls only RESOLVE
+    at runtime on Windows, which is where a trainer actually runs. Keeping the TFM
+    OS-agnostic means you can build/test the non-memory logic anywhere and only need
+    a Windows box (or VM) to attach to a real game.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>GameCheater.Core</RootNamespace>
+    <!-- The [LibraryImport] source generator emits unsafe marshalling stubs. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+</Project>

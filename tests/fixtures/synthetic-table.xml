@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Synthetic Cheat Engine table for testing CtParser. This is hand-authored fake content,
+  NOT a real game's table — it exists only to exercise every entry kind (group, static
+  value, pointer value, Auto Assembler script, Lua script). Named .xml (not .CT) so it is
+  not caught by the repo's .CT gitignore and can be committed as a fixture.
+-->
+<CheatTable CheatEngineTableVersion="42">
+  <CheatEntries>
+    <CheatEntry>
+      <ID>0</ID>
+      <Description>"Player"</Description>
+      <CheatEntries>
+        <CheatEntry>
+          <ID>1</ID>
+          <Description>"Infinite Health"</Description>
+          <VariableType>Float</VariableType>
+          <Address>"Game.exe"+01A2B3C4</Address>
+          <Offsets>
+            <Offset>2C</Offset>
+            <Offset>18</Offset>
+            <Offset>40</Offset>
+          </Offsets>
+        </CheatEntry>
+        <CheatEntry>
+          <ID>2</ID>
+          <Description>"Money"</Description>
+          <VariableType>4 Bytes</VariableType>
+          <Address>"Game.exe"+00CDEF00</Address>
+        </CheatEntry>
+      </CheatEntries>
+    </CheatEntry>
+
+    <CheatEntry>
+      <ID>3</ID>
+      <Description>"No Damage (script)"</Description>
+      <VariableType>Auto Assembler Script</VariableType>
+      <AssemblerScript>[ENABLE]
+aobscanmodule(noDamage,Game.exe,F3 0F 11 4B 24)
+noDamage:
+  db 90 90 90 90 90
+[DISABLE]
+noDamage:
+  db F3 0F 11 4B 24
+</AssemblerScript>
+    </CheatEntry>
+
+    <CheatEntry>
+      <ID>4</ID>
+      <Description>"Set Time (lua)"</Description>
+      <VariableType>Auto Assembler Script</VariableType>
+      <LuaScript>writeFloat("Game.exe+123456", 12.0)</LuaScript>
+    </CheatEntry>
+
+    <CheatEntry>
+      <ID>5</ID>
+      <Description>"Broken entry (no type, no address)"</Description>
+    </CheatEntry>
+  </CheatEntries>
+</CheatTable>

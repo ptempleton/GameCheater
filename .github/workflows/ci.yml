@@ -1,0 +1,28 @@
+name: CI
+
+# Runs once per PR (open/update) and once on merge to main — not on every branch push,
+# to keep private-repo Actions minutes down.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-and-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Restore
+        run: dotnet restore
+
+      - name: Build (Release, warnings as errors)
+        run: dotnet build -c Release --no-restore -warnaserror
+
+      - name: Lint gate (dotnet format)
+        run: dotnet format --verify-no-changes --no-restore

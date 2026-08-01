@@ -1,0 +1,7 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/GameCheater.App/GameCheater.App.csproj" />
+    <Project Path="src/GameCheater.Core/GameCheater.Core.csproj" />
+    <Project Path="src/GameCheater.Demo/GameCheater.Demo.csproj" />
+  </Folder>
+</Solution>

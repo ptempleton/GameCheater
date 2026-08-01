@@ -1,0 +1,49 @@
+name: Release
+
+# Cut a release by pushing a version tag, e.g.:  git tag v0.1.0 && git push origin v0.1.0
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write   # needed to create the GitHub Release and upload assets
+
+jobs:
+  publish-win-x64:
+    runs-on: ubuntu-latest   # .NET cross-publishes a Windows binary from Linux
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Publish client (GameCheater UI) — win-x64 single file
+        run: >
+          dotnet publish src/GameCheater.App/GameCheater.App.csproj
+          -c Release -r win-x64 --self-contained true
+          -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true
+          -o publish/client
+
+      - name: Publish CLI tools (scanner/watcher) — win-x64 single file
+        run: >
+          dotnet publish src/GameCheater.Demo/GameCheater.Demo.csproj
+          -c Release -r win-x64 --self-contained true
+          -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true
+          -o publish/cli
+
+      - name: Package
+        run: |
+          (cd publish/client && zip -r "$GITHUB_WORKSPACE/GameCheater-${GITHUB_REF_NAME}-win-x64.zip" .)
+          (cd publish/cli && zip -r "$GITHUB_WORKSPACE/GameCheater-cli-${GITHUB_REF_NAME}-win-x64.zip" .)
+
+      - name: Create GitHub Release and upload assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >
+          gh release create "${GITHUB_REF_NAME}"
+          "GameCheater-${GITHUB_REF_NAME}-win-x64.zip"
+          "GameCheater-cli-${GITHUB_REF_NAME}-win-x64.zip"
+          --title "GameCheater ${GITHUB_REF_NAME}"
+          --generate-notes
