@@ -9,4 +9,11 @@ public interface IValueCheat
 {
     /// <summary>The cheat's value as a string, for two-way binding. Bad input is ignored.</summary>
     string ValueText { get; set; }
+
+    /// <summary>The cheat's value as a double, for a slider. Round-trips through the real value type.</summary>
+    double NumericValue { get; set; }
+
+    /// <summary>Optional lower/upper bounds — when both are set, the UI shows a slider.</summary>
+    double? Minimum { get; }
+    double? Maximum { get; }
 }

@@ -29,6 +29,17 @@ public sealed class CheatViewModel : ViewModelBase
     public string? Description => _cheat.Description;
     public bool HasValue => _cheat is IValueCheat;
 
+    /// <summary>Show a slider when the value cheat defines both bounds; otherwise a text box.</summary>
+    public bool HasSlider => _cheat is IValueCheat { Minimum: not null, Maximum: not null };
+    public bool HasValueBox => HasValue && !HasSlider;
+    public double SliderMin => (_cheat as IValueCheat)?.Minimum ?? 0;
+    public double SliderMax => (_cheat as IValueCheat)?.Maximum ?? 100;
+    public double SliderValue
+    {
+        get => (_cheat as IValueCheat)?.NumericValue ?? 0;
+        set { if (_cheat is IValueCheat v) v.NumericValue = value; }
+    }
+
     public IReadOnlyList<string> HotKeyOptions => HotkeyManager.Keys;
 
     /// <summary>The raw assigned key (e.g. "F1"), or null. Used to build global registrations.</summary>
@@ -82,5 +93,7 @@ public sealed class CheatViewModel : ViewModelBase
             OnPropertyChanged(nameof(IsEnabled));
         else if (e.PropertyName == nameof(IValueCheat.ValueText))
             OnPropertyChanged(nameof(ValueText));
+        else if (e.PropertyName == nameof(IValueCheat.NumericValue))
+            OnPropertyChanged(nameof(SliderValue));
     }
 }

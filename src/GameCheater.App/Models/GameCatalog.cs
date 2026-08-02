@@ -47,11 +47,12 @@ public static class GameCatalog
         });
 
         t.Add(new FreezeCheat<int>(
-            Resolve.Pointer(0x0, 0x0), value: 9999, freeze: true, resolveEachTick: true)
+            Resolve.Pointer(0x0, 0x0), value: 9999, freeze: true, resolveEachTick: true,
+            minimum: 0, maximum: 9999)
         {
             Name = "Set Repair Points",
             Category = "Vehicle",
-            Description = "Freezes repair points — edit the value to set the amount.",
+            Description = "Freezes repair points — drag the slider to set the amount.",
         });
 
         return t;

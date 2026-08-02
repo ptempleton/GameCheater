@@ -69,7 +69,8 @@ public static class TrainerDefinitionLoader
             if (!atCurrent)
                 value = (T)Convert.ChangeType(c.Value!, typeof(T), CultureInfo.InvariantCulture);
             return new FreezeCheat<T>(resolver, value, freeze: true,
-                resolveEachTick: c.ResolveEachTick, freezeAtCurrentValue: atCurrent)
+                resolveEachTick: c.ResolveEachTick, freezeAtCurrentValue: atCurrent,
+                minimum: c.Min, maximum: c.Max)
             {
                 Name = c.Name,
                 Category = c.Category,

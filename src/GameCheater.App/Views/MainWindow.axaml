@@ -44,12 +44,28 @@
                            Text="{Binding ProcessName, StringFormat='{}{0}.exe'}"/>
               </StackPanel>
 
+              <!-- Category filter chips -->
+              <ListBox DockPanel.Dock="Top" Margin="6,0,6,8" Background="Transparent"
+                       ItemsSource="{Binding Categories}" SelectedItem="{Binding SelectedCategory}">
+                <ListBox.ItemsPanel>
+                  <ItemsPanelTemplate>
+                    <WrapPanel Orientation="Horizontal"/>
+                  </ItemsPanelTemplate>
+                </ListBox.ItemsPanel>
+                <ListBox.ItemTemplate>
+                  <DataTemplate x:DataType="x:String">
+                    <TextBlock Text="{Binding}" Padding="4,1"/>
+                  </DataTemplate>
+                </ListBox.ItemTemplate>
+              </ListBox>
+
               <!-- Cheats grouped by category, collapsible -->
               <ScrollViewer>
                 <ItemsControl ItemsSource="{Binding CheatGroups}">
                   <ItemsControl.ItemTemplate>
                     <DataTemplate x:DataType="vm:CheatGroupViewModel">
-                      <Expander Header="{Binding Header}" IsExpanded="{Binding IsExpanded}" Margin="0,2" Padding="4,0">
+                      <Expander Header="{Binding Header}" IsExpanded="{Binding IsExpanded}"
+                                IsVisible="{Binding IsVisible}" Margin="0,2" Padding="4,0">
                         <ItemsControl ItemsSource="{Binding Cheats}">
                           <ItemsControl.ItemTemplate>
                             <DataTemplate x:DataType="vm:CheatViewModel">
@@ -61,8 +77,11 @@
                                   <TextBlock Text="{Binding Description}" Foreground="Gray"
                                              FontSize="11" TextWrapping="Wrap"/>
                                 </StackPanel>
+                                <Slider Grid.Column="2" Width="120" Margin="8,0" VerticalAlignment="Center"
+                                        IsVisible="{Binding HasSlider}" Minimum="{Binding SliderMin}"
+                                        Maximum="{Binding SliderMax}" Value="{Binding SliderValue}"/>
                                 <TextBox Grid.Column="2" Width="88" Margin="8,0" VerticalAlignment="Center"
-                                         IsVisible="{Binding HasValue}" Text="{Binding ValueText}" PlaceholderText="value"/>
+                                         IsVisible="{Binding HasValueBox}" Text="{Binding ValueText}" PlaceholderText="value"/>
                                 <ComboBox Grid.Column="3" Width="70" Margin="6,0" VerticalAlignment="Center"
                                           ItemsSource="{Binding HotKeyOptions}" SelectedItem="{Binding HotKey}"
                                           ToolTip.Tip="Global hotkey to toggle this cheat"/>
