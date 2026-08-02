@@ -45,6 +45,10 @@ public sealed class CheatDefinition
     /// <summary>Re-walk the resolver every freeze tick (true for moving pointer targets).</summary>
     public bool ResolveEachTick { get; set; }
 
+    /// <summary>Optional slider bounds (freeze only) — when both are set, the UI shows a slider.</summary>
+    public double? Min { get; set; }
+    public double? Max { get; set; }
+
     // --- patch fields ---
     /// <summary>Hex bytes to write, e.g. "90 90 90 90 90" (patch only).</summary>
     public string? Patch { get; set; }

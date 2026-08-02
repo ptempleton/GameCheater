@@ -33,6 +33,7 @@ public sealed class FreezeCheat<T> : Cheat, IValueCheat where T : unmanaged
             _value = value;
             OnPropertyChanged();
             OnPropertyChanged(nameof(ValueText));
+            OnPropertyChanged(nameof(NumericValue));
             if (Enabled) TryWrite();   // live update while running
         }
     }
@@ -52,6 +53,20 @@ public sealed class FreezeCheat<T> : Cheat, IValueCheat where T : unmanaged
         }
     }
 
+    /// <summary>Numeric view of <see cref="Value"/> for slider binding (see <see cref="IValueCheat"/>).</summary>
+    public double NumericValue
+    {
+        get => Convert.ToDouble(_value, CultureInfo.InvariantCulture);
+        set
+        {
+            try { Value = (T)Convert.ChangeType(value, typeof(T), CultureInfo.InvariantCulture); }
+            catch (Exception e) when (e is OverflowException or InvalidCastException) { /* out of range — ignore */ }
+        }
+    }
+
+    public double? Minimum { get; }
+    public double? Maximum { get; }
+
     /// <param name="resolver">How to locate the target address at enable time.</param>
     /// <param name="value">Initial value to write / hold.</param>
     /// <param name="freeze">True = keep re-writing on the loop; false = write once.</param>
@@ -65,13 +80,16 @@ public sealed class FreezeCheat<T> : Cheat, IValueCheat where T : unmanaged
     /// target number — we just freeze whatever the game has until the user types one.
     /// </param>
     public FreezeCheat(Func<ProcessMemory, ulong?> resolver, T value,
-        bool freeze = true, bool resolveEachTick = false, bool freezeAtCurrentValue = false)
+        bool freeze = true, bool resolveEachTick = false, bool freezeAtCurrentValue = false,
+        double? minimum = null, double? maximum = null)
     {
         _resolve = resolver;
         _value = value;
         _freeze = freeze;
         _resolveEachTick = resolveEachTick;
         _freezeAtCurrent = freezeAtCurrentValue;
+        Minimum = minimum;
+        Maximum = maximum;
     }
 
     protected override void OnEnable()
@@ -88,6 +106,7 @@ public sealed class FreezeCheat<T> : Cheat, IValueCheat where T : unmanaged
                 _value = Memory.Read<T>(_address);
                 OnPropertyChanged(nameof(Value));
                 OnPropertyChanged(nameof(ValueText));
+                OnPropertyChanged(nameof(NumericValue));
             }
             catch (IOException) { /* couldn't read — fall back to the constructed value */ }
         }

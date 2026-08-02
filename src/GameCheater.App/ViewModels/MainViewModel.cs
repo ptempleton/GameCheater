@@ -21,6 +21,15 @@ public sealed class MainViewModel : ViewModelBase
     public ObservableCollection<GameDef> Games { get; } = new();
     public ObservableCollection<CheatViewModel> Cheats { get; } = new();
     public ObservableCollection<CheatGroupViewModel> CheatGroups { get; } = new();
+    public ObservableCollection<string> Categories { get; } = new();
+
+    private string _selectedCategory = "All";
+    public string SelectedCategory
+    {
+        get => _selectedCategory;
+        set { if (SetField(ref _selectedCategory, value)) ApplyCategoryFilter(); }
+    }
+
     public RelayCommand ToggleEngineCommand { get; }
     public AsyncRelayCommand RefreshCommand { get; }
 
@@ -68,6 +77,28 @@ public sealed class MainViewModel : ViewModelBase
                 vm.Cheats.Add(cheat);
             CheatGroups.Add(vm);
         }
+        RebuildCategories();
+        ApplyCategoryFilter();
+    }
+
+    // Filter chips: "All" plus one per category. Reset to "All" if the current pick vanished.
+    private void RebuildCategories()
+    {
+        Categories.Clear();
+        Categories.Add("All");
+        foreach (var g in CheatGroups)
+            Categories.Add(g.Category);
+        if (!Categories.Contains(_selectedCategory))
+        {
+            _selectedCategory = "All";
+            OnPropertyChanged(nameof(SelectedCategory));
+        }
+    }
+
+    private void ApplyCategoryFilter()
+    {
+        foreach (var g in CheatGroups)
+            g.IsVisible = _selectedCategory == "All" || g.Category == _selectedCategory;
     }
 
     /// <summary>

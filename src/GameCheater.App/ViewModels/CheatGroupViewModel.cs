@@ -12,6 +12,9 @@ public sealed class CheatGroupViewModel : ViewModelBase
     private bool _isExpanded = true;
     public bool IsExpanded { get => _isExpanded; set => SetField(ref _isExpanded, value); }
 
+    private bool _isVisible = true;
+    public bool IsVisible { get => _isVisible; set => SetField(ref _isVisible, value); }
+
     public CheatGroupViewModel(string category) => Category = category;
 
     public string Header => $"{Category}  ({Cheats.Count})";
