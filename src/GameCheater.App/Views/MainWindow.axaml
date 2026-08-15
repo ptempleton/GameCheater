@@ -11,8 +11,8 @@
 
   <Grid RowDefinitions="Auto,*,Auto" Margin="14">
 
-    <!-- Top bar: game picker + refresh + engine start/stop -->
-    <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto,Auto,Auto" Margin="0,0,0,12">
+    <!-- Top bar: game picker + disable-all + refresh + engine start/stop -->
+    <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto" Margin="0,0,0,12">
       <TextBlock Grid.Column="0" Text="Game" VerticalAlignment="Center" Margin="0,0,10,0" FontWeight="SemiBold"/>
       <ComboBox Grid.Column="1" HorizontalAlignment="Stretch"
                 ItemsSource="{Binding Games}" SelectedItem="{Binding SelectedGame}">
@@ -27,9 +27,12 @@
         <TextBlock Text="{Binding ProcessName, StringFormat='{}{0}.exe'}" Foreground="Gray"
                    FontSize="10" HorizontalAlignment="Right"/>
       </StackPanel>
-      <Button Grid.Column="3" Margin="0,0,8,0" Content="⟳ Refresh"
+      <Button Grid.Column="3" Margin="0,0,8,0" Content="■ Disable All"
+              Command="{Binding DisableAllCommand}" Foreground="#E06666"
+              ToolTip.Tip="Panic: turn every active cheat off immediately"/>
+      <Button Grid.Column="4" Margin="0,0,8,0" Content="⟳ Refresh"
               Command="{Binding RefreshCommand}" ToolTip.Tip="Pull the latest trainers from the cheats repo"/>
-      <Button Grid.Column="4" MinWidth="120" HorizontalContentAlignment="Center"
+      <Button Grid.Column="5" MinWidth="120" HorizontalContentAlignment="Center"
               Content="{Binding EngineButtonText}" Command="{Binding ToggleEngineCommand}"/>
     </Grid>
 
@@ -155,11 +158,13 @@
           </Border>
 
           <!-- capture actions -->
-          <Grid Grid.Row="4" ColumnDefinitions="Auto,*,Auto,Auto" Margin="0,8,0,0">
-            <TextBox Grid.Column="0" Width="84" Text="{Binding FreezeValue}" PlaceholderText="freeze val"/>
+          <Grid Grid.Row="4" ColumnDefinitions="Auto,*,Auto,Auto,Auto" Margin="0,8,0,0">
+            <TextBox Grid.Column="0" Width="120" Text="{Binding FreezeValue}" PlaceholderText="save value (blank=current)"/>
             <TextBox Grid.Column="1" Margin="8,0" Text="{Binding CheatName}" PlaceholderText="cheat name (e.g. Unlimited Fuel)"/>
-            <Button Grid.Column="2" Content="Freeze" Command="{Binding FreezeCommand}" Margin="0,0,6,0"/>
-            <Button Grid.Column="3" Content="Save as cheat" Command="{Binding SaveCommand}"/>
+            <Button Grid.Column="2" Content="Test Freeze" Command="{Binding FreezeCommand}" Margin="0,0,6,0"
+                    ToolTip.Tip="Hold the selected candidate at its CURRENT value to test it — safe, not saved"/>
+            <Button Grid.Column="3" Content="Unfreeze" Command="{Binding UnfreezeCommand}" Margin="0,0,6,0"/>
+            <Button Grid.Column="4" Content="Save as cheat" Command="{Binding SaveCommand}"/>
           </Grid>
 
           <TextBlock Grid.Row="5" Margin="0,6,0,0" Foreground="Gray" TextWrapping="Wrap" Text="{Binding Status}"/>

@@ -15,10 +15,10 @@ public sealed class CaptureViewModel : ViewModelBase
 {
     private readonly Func<ProcessMemory?> _memory;
     private readonly Func<Trainer?> _trainer;
-    private readonly Action<Cheat> _addCheat;
     private readonly Func<string> _gameName;
 
     private IValueScanSession? _session;
+    private Cheat? _testCheat;              // the current test freeze (not shown in the Cheats list)
     private readonly TrainerDefinition _captured = new();
 
     public ObservableCollection<string> Types { get; } = new(ValueScan.Types);
@@ -33,14 +33,13 @@ public sealed class CaptureViewModel : ViewModelBase
     public AsyncRelayCommand ExactNarrowCommand { get; }
     public RelayCommand ResetCommand { get; }
     public RelayCommand FreezeCommand { get; }
+    public RelayCommand UnfreezeCommand { get; }
     public RelayCommand SaveCommand { get; }
 
-    public CaptureViewModel(Func<ProcessMemory?> memory, Func<Trainer?> trainer,
-        Action<Cheat> addCheat, Func<string> gameName)
+    public CaptureViewModel(Func<ProcessMemory?> memory, Func<Trainer?> trainer, Func<string> gameName)
     {
         _memory = memory;
         _trainer = trainer;
-        _addCheat = addCheat;
         _gameName = gameName;
 
         FirstScanCommand = new AsyncRelayCommand(() => RunFirstScan(unknown: false));
@@ -52,6 +51,7 @@ public sealed class CaptureViewModel : ViewModelBase
         ExactNarrowCommand = new AsyncRelayCommand(() => Narrow(s => s.NarrowExact(NarrowValue), $"== {NarrowValue}"));
         ResetCommand = new RelayCommand(ResetScan);
         FreezeCommand = new RelayCommand(Freeze, () => SelectedCandidate is not null);
+        UnfreezeCommand = new RelayCommand(Unfreeze);
         SaveCommand = new RelayCommand(SaveCheat, () => SelectedCandidate is not null);
     }
 
@@ -140,6 +140,9 @@ public sealed class CaptureViewModel : ViewModelBase
         CandidateCount = _session.CandidateCount;
     }
 
+    // A throwaway test freeze: holds the candidate at its CURRENT value (never writes an
+    // arbitrary value that could crash the game) so you can drive and see if the gauge stops.
+    // Not added to the Cheats list — clear it with Unfreeze (or the top-bar Disable All).
     private void Freeze()
     {
         var trainer = _trainer();
@@ -150,14 +153,28 @@ public sealed class CaptureViewModel : ViewModelBase
         }
         try
         {
-            string name = string.IsNullOrWhiteSpace(CheatName) ? $"Value @ 0x{cand.Address:X}" : CheatName;
-            var cheat = _session.CreateFreeze(cand.Address, FreezeValue, name, CheatCategory, NullIfBlank(CheatDescription));
+            ClearTestFreeze(trainer);
+            var cheat = _session.CreateFreeze(cand.Address, valueText: null, "capture test", "Capture", null);
             trainer.Add(cheat);
             cheat.Enable();
-            _addCheat(cheat);
-            Status = $"Froze \"{name}\" — it's live and now in the Cheats tab.";
+            _testCheat = cheat;
+            Status = $"Test-freezing 0x{cand.Address:X} at its current value — drive and watch. Unfreeze to stop.";
         }
         catch (Exception ex) { Status = $"Freeze failed: {ex.Message}"; }
+    }
+
+    private void Unfreeze()
+    {
+        ClearTestFreeze(_trainer());
+        Status = "Test freeze cleared.";
+    }
+
+    private void ClearTestFreeze(Trainer? trainer)
+    {
+        if (_testCheat is null) return;
+        try { _testCheat.Disable(); } catch { /* best effort */ }
+        trainer?.Cheats.Remove(_testCheat);
+        _testCheat = null;
     }
 
     private void SaveCheat()

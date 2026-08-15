@@ -31,6 +31,7 @@ public sealed class MainViewModel : ViewModelBase
     }
 
     public RelayCommand ToggleEngineCommand { get; }
+    public RelayCommand DisableAllCommand { get; }
     public AsyncRelayCommand RefreshCommand { get; }
 
     /// <summary>The "Capture" tab — point-and-click value scanning over the attached game.</summary>
@@ -39,11 +40,11 @@ public sealed class MainViewModel : ViewModelBase
     public MainViewModel()
     {
         ToggleEngineCommand = new RelayCommand(ToggleEngine, () => _trainer is not null);
+        DisableAllCommand = new RelayCommand(DisableAllCheats, () => _trainer is not null);
         RefreshCommand = new AsyncRelayCommand(RefreshAsync);
         Capture = new CaptureViewModel(
             memory: () => _trainer?.Memory,
             trainer: () => _trainer,
-            addCheat: cheat => Cheats.Add(Wrap(cheat)),
             gameName: () => _trainer?.Game ?? SelectedGame?.Display ?? "Game");
 
         // Keep the grouped view + hotkeys in sync as cheats are added/cleared.
@@ -174,6 +175,7 @@ public sealed class MainViewModel : ViewModelBase
         {
             _trainer = null;
             ToggleEngineCommand.RaiseCanExecuteChanged();
+            DisableAllCommand.RaiseCanExecuteChanged();
             return;
         }
 
@@ -193,6 +195,14 @@ public sealed class MainViewModel : ViewModelBase
 
         OnPropertyChanged(nameof(ProcessName));
         ToggleEngineCommand.RaiseCanExecuteChanged();
+        DisableAllCommand.RaiseCanExecuteChanged();
+    }
+
+    /// <summary>Panic button: turn every active cheat off at once (keeps the engine attached).</summary>
+    private void DisableAllCheats()
+    {
+        _trainer?.DisableAll();
+        Status = "All cheats disabled.";
     }
 
     private void ToggleEngine()
