@@ -67,6 +67,22 @@ public sealed class ValueScanner<T> where T : unmanaged, IComparable<T>
         return Count;
     }
 
+    /// <summary>Find every writable value within [lo, hi] — for a fractional value whose display
+    /// is rounded (e.g. fuel shows "189" but is stored ~188.7), scan the range 188..190.</summary>
+    public int FirstScanBetween(T lo, T hi)
+    {
+        Reset();
+        SweepWritable((addr, value) =>
+        {
+            if (value.CompareTo(lo) >= 0 && value.CompareTo(hi) <= 0)
+            {
+                _addresses.Add(addr);
+                _lastValues.Add(value);
+            }
+        });
+        return Count;
+    }
+
     /// <summary>
     /// Start an "unknown initial value" hunt: snapshot writable memory (raw), then narrow with
     /// <see cref="NextScanIncreased"/>/<see cref="NextScanDecreased"/>/<see cref="NextScanChanged"/>.
@@ -91,6 +107,7 @@ public sealed class ValueScanner<T> where T : unmanaged, IComparable<T>
         return Refine((cur, _) => comparer.Equals(cur, target));
     }
 
+    public int NextScanBetween(T lo, T hi) => Refine((cur, _) => cur.CompareTo(lo) >= 0 && cur.CompareTo(hi) <= 0);
     public int NextScanChanged() => Refine((cur, prev) => cur.CompareTo(prev) != 0);
     public int NextScanUnchanged() => Refine((cur, prev) => cur.CompareTo(prev) == 0);
     public int NextScanIncreased() => Refine((cur, prev) => cur.CompareTo(prev) > 0);

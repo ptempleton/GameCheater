@@ -25,8 +25,10 @@ public interface IValueScanSession
     bool FirstScanDone { get; }
 
     void FirstScanExact(string value);
+    void FirstScanRange(string lo, string hi);
     void FirstScanUnknown();
     void NarrowIncreased();
+    void NarrowRange(string lo, string hi);
     void NarrowDecreased();
     void NarrowChanged();
     void NarrowUnchanged();
@@ -78,8 +80,10 @@ internal sealed class ValueScanSession<T> : IValueScanSession where T : unmanage
     }
 
     public void FirstScanExact(string value) { _scanner.FirstScan(_parse(value)); FirstScanDone = true; }
+    public void FirstScanRange(string lo, string hi) { _scanner.FirstScanBetween(_parse(lo), _parse(hi)); FirstScanDone = true; }
     public void FirstScanUnknown() { _scanner.FirstScanUnknown(); FirstScanDone = true; }
     public void NarrowIncreased() => _scanner.NextScanIncreased();
+    public void NarrowRange(string lo, string hi) => _scanner.NextScanBetween(_parse(lo), _parse(hi));
     public void NarrowDecreased() => _scanner.NextScanDecreased();
     public void NarrowChanged() => _scanner.NextScanChanged();
     public void NarrowUnchanged() => _scanner.NextScanUnchanged();
