@@ -154,11 +154,16 @@ public sealed class CaptureViewModel : ViewModelBase
         try
         {
             ClearTestFreeze(trainer);
-            var cheat = _session.CreateFreeze(cand.Address, valueText: null, "capture test", "Capture", null);
+            // Blank value box = hold at current (safe). Type a value = set-and-hold, so you can
+            // watch whether the on-screen gauge jumps (that's how you spot the *authoritative* address).
+            string? value = NullIfBlank(FreezeValue);
+            var cheat = _session.CreateFreeze(cand.Address, value, "capture test", "Capture", null);
             trainer.Add(cheat);
             cheat.Enable();
             _testCheat = cheat;
-            Status = $"Test-freezing 0x{cand.Address:X} at its current value — drive and watch. Unfreeze to stop.";
+            Status = value is null
+                ? $"Holding 0x{cand.Address:X} at current — drive and watch the gauge. Unfreeze to stop."
+                : $"Set 0x{cand.Address:X} = {value} — did the gauge jump? If yes, that's the real one. Unfreeze to stop.";
         }
         catch (Exception ex) { Status = $"Freeze failed: {ex.Message}"; }
     }
