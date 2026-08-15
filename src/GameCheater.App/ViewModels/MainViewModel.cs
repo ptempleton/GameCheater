@@ -152,11 +152,15 @@ public sealed class MainViewModel : ViewModelBase
         private set
         {
             if (SetField(ref _isAttached, value))
+            {
                 OnPropertyChanged(nameof(EngineButtonText));
+                OnPropertyChanged(nameof(AttachStatusText));
+            }
         }
     }
 
     public string EngineButtonText => IsAttached ? "Stop Engine" : "Start Engine";
+    public string AttachStatusText => IsAttached ? "● Attached" : "○ Not attached";
     public string? ProcessName => _trainer?.ProcessName;
 
     private void OnGameChanged()

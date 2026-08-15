@@ -5,8 +5,8 @@
         xmlns:scanning="clr-namespace:GameCheater.Core.Scanning;assembly=GameCheater.Core"
         x:Class="GameCheater.App.Views.MainWindow"
         x:DataType="vm:MainViewModel"
-        Width="860" Height="580"
-        MinWidth="640" MinHeight="420"
+        Width="1150" Height="720"
+        MinWidth="860" MinHeight="460"
         Title="GameCheater">
 
   <Grid RowDefinitions="Auto,*,Auto" Margin="14">
@@ -22,8 +22,11 @@
           </DataTemplate>
         </ComboBox.ItemTemplate>
       </ComboBox>
-      <TextBlock Grid.Column="2" VerticalAlignment="Center" Margin="12,0" Foreground="Gray"
-                 Text="{Binding ProcessName, StringFormat='proc: {0}.exe'}"/>
+      <StackPanel Grid.Column="2" VerticalAlignment="Center" Margin="12,0" HorizontalAlignment="Right">
+        <TextBlock Text="{Binding AttachStatusText}" FontWeight="SemiBold" HorizontalAlignment="Right"/>
+        <TextBlock Text="{Binding ProcessName, StringFormat='{}{0}.exe'}" Foreground="Gray"
+                   FontSize="10" HorizontalAlignment="Right"/>
+      </StackPanel>
       <Button Grid.Column="3" Margin="0,0,8,0" Content="⟳ Refresh"
               Command="{Binding RefreshCommand}" ToolTip.Tip="Pull the latest trainers from the cheats repo"/>
       <Button Grid.Column="4" MinWidth="120" HorizontalContentAlignment="Center"
