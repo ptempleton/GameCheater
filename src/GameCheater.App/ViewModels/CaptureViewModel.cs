@@ -48,7 +48,7 @@ public sealed class CaptureViewModel : ViewModelBase
         DecreasedCommand = new AsyncRelayCommand(() => Narrow(s => s.NarrowDecreased(), "decreased"));
         ChangedCommand = new AsyncRelayCommand(() => Narrow(s => s.NarrowChanged(), "changed"));
         UnchangedCommand = new AsyncRelayCommand(() => Narrow(s => s.NarrowUnchanged(), "unchanged"));
-        ExactNarrowCommand = new AsyncRelayCommand(() => Narrow(s => s.NarrowExact(NarrowValue), $"== {NarrowValue}"));
+        ExactNarrowCommand = new AsyncRelayCommand(NarrowExactOrRange);
         ResetCommand = new RelayCommand(ResetScan);
         FreezeCommand = new RelayCommand(Freeze, () => SelectedCandidate is not null);
         UnfreezeCommand = new RelayCommand(Unfreeze);
@@ -105,15 +105,19 @@ public sealed class CaptureViewModel : ViewModelBase
         {
             _session = ValueScan.Create(mem, SelectedType);
             Status = unknown ? "Scanning writable memory…" : $"Scanning for {FirstValue}…";
+            bool range = TryParseRange(FirstValue, out var lo, out var hi);
             await Task.Run(() =>
             {
                 if (unknown) _session.FirstScanUnknown();
+                else if (range) _session.FirstScanRange(lo, hi);
                 else _session.FirstScanExact(FirstValue);
             });
             RefreshCandidates();
             Status = unknown
                 ? $"{CandidateCount:N0} candidates. Change the value in-game, then − / +."
-                : $"{CandidateCount:N0} candidates == {FirstValue}.";
+                : range
+                    ? $"{CandidateCount:N0} candidates in {lo}–{hi}."
+                    : $"{CandidateCount:N0} candidates == {FirstValue}.";
         }
         catch (Exception ex) { Status = $"Scan failed: {ex.Message}"; }
     }
@@ -129,6 +133,25 @@ public sealed class CaptureViewModel : ViewModelBase
             Status = $"{CandidateCount:N0} candidates ({label}).";
         }
         catch (Exception ex) { Status = $"Narrow failed: {ex.Message}"; }
+    }
+
+    private Task NarrowExactOrRange()
+    {
+        if (TryParseRange(NarrowValue, out var lo, out var hi))
+            return Narrow(s => s.NarrowRange(lo, hi), $"in {lo}-{hi}");
+        return Narrow(s => s.NarrowExact(NarrowValue), $"== {NarrowValue}");
+    }
+
+    // "188-190" -> a range; a single number -> not a range. (For positive values like fuel.)
+    private static bool TryParseRange(string? text, out string lo, out string hi)
+    {
+        lo = hi = "";
+        if (string.IsNullOrWhiteSpace(text)) return false;
+        var parts = text.Split('-', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length != 2) return false;
+        lo = parts[0];
+        hi = parts[1];
+        return true;
     }
 
     private void RefreshCandidates()

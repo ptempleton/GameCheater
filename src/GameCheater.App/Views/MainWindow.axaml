@@ -128,7 +128,7 @@
           <Grid Grid.Row="0" ColumnDefinitions="Auto,Auto,*,Auto,Auto" Margin="0,0,0,6">
             <TextBlock Grid.Column="0" Text="Type" VerticalAlignment="Center" Margin="0,0,6,0"/>
             <ComboBox Grid.Column="1" Width="92" ItemsSource="{Binding Types}" SelectedItem="{Binding SelectedType}"/>
-            <TextBox Grid.Column="2" Margin="8,0" Text="{Binding FirstValue}" PlaceholderText="value (blank = unknown)"/>
+            <TextBox Grid.Column="2" Margin="8,0" Text="{Binding FirstValue}" PlaceholderText="value, range (188-190), or blank = unknown"/>
             <Button Grid.Column="3" Content="First Scan" Command="{Binding FirstScanCommand}" Margin="0,0,6,0"/>
             <Button Grid.Column="4" Content="Unknown ?" Command="{Binding UnknownScanCommand}"/>
           </Grid>
@@ -139,7 +139,7 @@
             <Button Content="+ increased" Command="{Binding IncreasedCommand}"/>
             <Button Content="~ changed" Command="{Binding ChangedCommand}"/>
             <Button Content="= unchanged" Command="{Binding UnchangedCommand}"/>
-            <TextBox Width="80" Text="{Binding NarrowValue}" PlaceholderText="exact"/>
+            <TextBox Width="110" Text="{Binding NarrowValue}" PlaceholderText="exact or 179-181"/>
             <Button Content="= value" Command="{Binding ExactNarrowCommand}"/>
             <Button Content="Reset" Command="{Binding ResetCommand}"/>
           </StackPanel>
