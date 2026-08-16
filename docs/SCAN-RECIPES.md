@@ -33,9 +33,9 @@ that into an authored trainer definition.
 A raw survivor address is invalid next launch. Convert it:
 - **Pointer chain** — in CE, right-click the address → "Pointer scan for this address",
   restart the game, rescan to filter to a stable path. Paste as `Resolve.Pointer(base, ...offsets)`.
-- **AOB signature** — for code patches: on the value, "Find out what writes to this
-  address", pick the instruction, copy the surrounding bytes as a pattern with wildcards
-  for the address operand. Paste as `Resolve.Aob("...")` and `PatchCheat.Nops(len)`.
+- **AOB signature** — for code patches: run `find-writes` (below) on the value, pick the
+  instruction, and it emits the wildcarded pattern and NOP bytes for you. Equivalent to
+  Cheat Engine's "find out what writes to this address", but built in.
 
 ### 5. Engine notes that save time
 - **Unreal Engine (UE4/UE5)** games — Palworld, Soulmask, Subnautica 2, StarRupture,
@@ -51,6 +51,60 @@ A raw survivor address is invalid next launch. Convert it:
 
 ---
 
+## When freezing doesn't work: `find-writes`
+
+Some values can't be frozen at all. The number you scanned turns out to be a **mirror** — the
+game recomputes it every frame from somewhere else, so writing to it changes nothing. This is
+exactly what SnowRunner's fuel gauge does, and it's why the trainer ships a debugger.
+
+The fix is to stop the *code* that consumes the value instead of fighting the number:
+
+```powershell
+# 1. Value-scan until you have an address that tracks the value (a mirror is fine).
+.\watch-values.cmd SnowRunner float
+
+# 2. Ask which instructions write to it. Run as Administrator.
+.\find-writes.cmd SnowRunner 1F3A40C20 4
+```
+
+It attaches as a real debugger, puts a **hardware write breakpoint** on the address, and
+reports every instruction that stores there — with hit counts, because the consumer is
+usually the busiest one:
+
+```
+  [1] SnowRunner.exe+0x8A12F4   142x   thread 9312
+      F3 0F 11 43 20   (5 bytes)
+      value after: i32 1128529920   f32 188.7
+```
+
+Then, in the same session:
+
+- `n 1` — **NOP it in the live game** and look at the screen. Did the drain stop? That single
+  step is the whole answer; everything before it is guesswork.
+- `r 1` — put it back. Quitting restores every patch automatically.
+- `p 1` — preview the durable AOB (address-sized operands wildcarded so it survives the module
+  landing at a new base) and check it matches **exactly once** in the module.
+- `s 1` — save it as a `patch` cheat straight into a `games/<game>.json` definition.
+
+Notes and limits:
+
+- **Windows-only, x64, Administrator.** Only one debugger can attach to a process at a time,
+  so close Cheat Engine first.
+- **The game freezes on every hit.** A breakpoint on a hot address stutters badly — watch,
+  capture, then quit. The debugger detaches cleanly and the game keeps running.
+- **Single-player only.** Never attach to an EAC/BattlEye session.
+- The trap fires *after* the storing instruction, so the tool decodes backwards to find it.
+  If a writer sits in dynamically generated code (a JIT, an unpacked block) it says so — an
+  AOB can't re-find that after a relaunch, so it's a this-session-only patch.
+- Chaining: if the address you found is a mirror, its writer's *source* is the authoritative
+  value. Read the source operand, scan for that address, and run `find-writes` again on it.
+
+`GameCheater.Cli --selftest` verifies the x86-64 length decoder underneath all this against
+reference encodings — worth running after touching it, since a one-byte length error means
+NOPing into the middle of the next instruction.
+
+---
+
 ## Difficulty legend
 🟢 easy value scan · 🟡 needs pointer scan / unknown-value narrowing · 🔴 code patch or awkward storage
 
@@ -62,7 +116,7 @@ lean on the vehicle-side values instead.
 
 | Cheat | Kind | Type | Diff | Recipe |
 |-------|------|------|------|--------|
-| Infinite fuel | freeze | float | 🟢 | Drive to burn fuel → `FirstScanUnknown` + `NextScanDecreased`; or read tank size and exact-scan. Freeze at max. `resolveEachTick` (per-truck pointer). |
+| Infinite fuel | patch | — | 🔴 | **Not freezable** — confirmed live: the gauge value is recomputed every frame and the address the scanner finds is only a mirror, so freezing/setting it does nothing. Scan to that mirror anyway, then `find-writes` on it and NOP the consuming store. |
 | Infinite repair points | freeze | int/float | 🟢 | Damage a truck, use repair to change the value, decreased/increased narrowing. |
 | Infinite spare tires | freeze | int | 🟢 | Exact-scan the count shown, use one, `NextScanExact`. |
 | Freeze time of day | freeze | float | 🟡 | `FirstScanUnknown` → wait → `NextScanIncreased` repeatedly; freeze. |
