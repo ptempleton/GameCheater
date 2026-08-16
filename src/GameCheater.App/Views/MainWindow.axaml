@@ -158,7 +158,7 @@
           </Border>
 
           <!-- capture actions -->
-          <Grid Grid.Row="4" ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto" Margin="0,8,0,0">
+          <Grid Grid.Row="4" ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto,Auto" Margin="0,8,0,0">
             <TextBox Grid.Column="0" Width="120" Text="{Binding FreezeValue}" PlaceholderText="save value (blank=current)"/>
             <TextBox Grid.Column="1" Margin="8,0" Text="{Binding CheatName}" PlaceholderText="cheat name (e.g. Unlimited Fuel)"/>
             <Button Grid.Column="2" x:Name="CopyAddressButton" Content="Copy address" Margin="0,0,6,0"
@@ -167,7 +167,9 @@
             <Button Grid.Column="3" Content="Test Freeze" Command="{Binding FreezeCommand}" Margin="0,0,6,0"
                     ToolTip.Tip="Hold the selected candidate at its CURRENT value to test it — safe, not saved"/>
             <Button Grid.Column="4" Content="Unfreeze" Command="{Binding UnfreezeCommand}" Margin="0,0,6,0"/>
-            <Button Grid.Column="5" Content="Save as cheat" Command="{Binding SaveCommand}"/>
+            <Button Grid.Column="5" Content="Save as cheat" Command="{Binding SaveCommand}" Margin="0,0,6,0"/>
+            <Button Grid.Column="6" Content="Export" Command="{Binding ExportCandidatesCommand}"
+                    ToolTip.Tip="Write all candidate addresses to candidates.txt for the CLI bisect-freeze"/>
           </Grid>
 
           <TextBlock Grid.Row="5" Margin="0,6,0,0" Foreground="Gray" TextWrapping="Wrap" Text="{Binding Status}"/>

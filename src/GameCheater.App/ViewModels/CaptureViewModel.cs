@@ -35,6 +35,7 @@ public sealed class CaptureViewModel : ViewModelBase
     public RelayCommand FreezeCommand { get; }
     public RelayCommand UnfreezeCommand { get; }
     public RelayCommand SaveCommand { get; }
+    public RelayCommand ExportCandidatesCommand { get; }
 
     public CaptureViewModel(Func<ProcessMemory?> memory, Func<Trainer?> trainer, Func<string> gameName)
     {
@@ -53,6 +54,36 @@ public sealed class CaptureViewModel : ViewModelBase
         FreezeCommand = new RelayCommand(Freeze, () => SelectedCandidate is not null);
         UnfreezeCommand = new RelayCommand(Unfreeze);
         SaveCommand = new RelayCommand(SaveCheat, () => SelectedCandidate is not null);
+        ExportCandidatesCommand = new RelayCommand(ExportCandidates);
+    }
+
+    /// <summary>
+    /// Dump every current candidate address to a file the CLI bisect-freeze reads. When a scan
+    /// narrows to a cluster of values that all track the same thing (dozens of engine-integrity
+    /// mirrors) and no narrow can split them, this hands the set to <c>--bisect</c>, which
+    /// freezes half at a time to find the one authoritative value. Capped so a still-huge scan
+    /// doesn't write a giant file — narrow to a manageable set first.
+    /// </summary>
+    private void ExportCandidates()
+    {
+        if (_session is null || !_session.FirstScanDone) { Status = "Do a scan first."; return; }
+        const int cap = 20000;
+        if (_session.CandidateCount > cap)
+        {
+            Status = $"Too many candidates ({_session.CandidateCount:N0}) — narrow below {cap:N0} first.";
+            return;
+        }
+
+        var dir = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "GameCheater");
+        Directory.CreateDirectory(dir);
+        string path = Path.Combine(dir, "candidates.txt");
+
+        var lines = new List<string> { _session.TypeName };
+        lines.AddRange(_session.Top(cap).Select(c => "0x" + c.Address.ToString("X")));
+        File.WriteAllText(path, string.Join('\n', lines));
+
+        Status = $"Exported {lines.Count - 1} candidate(s) to {path}";
     }
 
     private string _selectedType = "float";
