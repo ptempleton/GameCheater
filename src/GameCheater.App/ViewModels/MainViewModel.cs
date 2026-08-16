@@ -114,12 +114,24 @@ public sealed class MainViewModel : ViewModelBase
         foreach (var d in defs)
             map[d.Game] = new GameDef(d.Game, d.Process, () => TrainerDefinitionLoader.ToTrainer(d));
 
-        var previouslySelected = SelectedGame?.Display;
+        // If a game is currently attached, keep its EXISTING GameDef instance rather than the
+        // freshly-built one. Every rebuild otherwise makes a new object per game, so reselecting
+        // the same game below changes the SelectedGame reference, fires OnGameChanged, and tears
+        // down the live session. Refresh should update the catalog, not detach the game the user
+        // is mid-scan on. (A refreshed definition for the attached game applies on its next select.)
+        var current = SelectedGame;
+        if (current is not null && IsAttached && map.ContainsKey(current.Display))
+            map[current.Display] = current;
+
         Games.Clear();
         foreach (var g in map.Values.OrderBy(g => g.Display, StringComparer.OrdinalIgnoreCase))
             Games.Add(g);
 
-        SelectedGame = Games.FirstOrDefault(g => g.Display == previouslySelected) ?? Games.FirstOrDefault();
+        // Prefer the same instance (reference-equal → the setter no-ops → no teardown); fall back
+        // to the same-named game, then to the first available.
+        SelectedGame = (current is not null ? Games.FirstOrDefault(g => ReferenceEquals(g, current)) : null)
+            ?? Games.FirstOrDefault(g => g.Display == current?.Display)
+            ?? Games.FirstOrDefault();
     }
 
     /// <summary>Pull the latest definitions from the cheats repo and update the picker live (no restart).</summary>
