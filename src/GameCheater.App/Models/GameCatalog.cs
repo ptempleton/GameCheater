@@ -47,6 +47,50 @@ public static class GameCatalog
         });
 
         t.Add(new FreezeCheat<int>(
+            Resolve.Pointer(0x2A8EDD8, 0x8, 0x150, 0x38),
+            value: 0,
+            freeze: true,
+            resolveEachTick: true)
+        {
+            Name = "No Engine Damage",
+            Category = "Vehicle",
+            Description = "Keeps the active truck's accumulated engine damage at zero.",
+        });
+
+        t.Add(new FreezeCheat<int>(
+            Resolve.Pointer(0x2A8EDD8, 0x8, 0x148, 0x38),
+            value: 0,
+            freeze: true,
+            resolveEachTick: true)
+        {
+            Name = "No Transmission Damage",
+            Category = "Vehicle",
+            Description = "Keeps the active truck's accumulated transmission damage at zero.",
+        });
+
+        t.Add(new FreezeCheat<int>(
+            Resolve.Pointer(0x2A8EDD8, 0x8, 0x158, 0x38),
+            value: 0,
+            freeze: true,
+            resolveEachTick: true)
+        {
+            Name = "No Fuel Tank Damage",
+            Category = "Vehicle",
+            Description = "Keeps the active truck's accumulated fuel-tank damage at zero.",
+        });
+
+        t.Add(new FreezeCheat<int>(
+            Resolve.Pointer(0x2A8EDD8, 0x8, 0x160, 0x38),
+            value: 0,
+            freeze: true,
+            resolveEachTick: true)
+        {
+            Name = "No Suspension Damage",
+            Category = "Vehicle",
+            Description = "Keeps the active truck's accumulated suspension damage at zero.",
+        });
+
+        t.Add(new FreezeCheat<int>(
             Resolve.Pointer(0x0, 0x0), value: 9999, freeze: true, resolveEachTick: true,
             minimum: 0, maximum: 9999)
         {

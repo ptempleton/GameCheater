@@ -32,12 +32,24 @@ public sealed class DebugRegisterHider : IDisposable
     public bool Installed => _installed;
 
     /// <summary>Install the hook, or return null if it couldn't be built (non-Windows, or an
-    /// ntdll stub shape we don't recognise). Failure is non-fatal — the caller can proceed
-    /// without hiding, it just risks detection.</summary>
+    /// ntdll stub shape we don't recognise). The caller decides whether proceeding without
+    /// hiding is safe; anti-tamper-aware callers should fail closed.</summary>
     public static DebugRegisterHider? TryInstall(ProcessMemory memory)
     {
         var hider = new DebugRegisterHider(memory);
-        return hider.Install() ? hider : null;
+        try
+        {
+            if (hider.Install())
+                return hider;
+        }
+        catch
+        {
+            hider.RollBackFailedInstall();
+            throw;
+        }
+
+        hider.RollBackFailedInstall();
+        return null;
     }
 
     private bool Install()
@@ -65,6 +77,7 @@ public sealed class DebugRegisterHider : IDisposable
             Win32.MEM_COMMIT_RESERVE, Win32.MemoryProtection.ExecuteReadWrite);
         if (_detour == IntPtr.Zero) return false;
         _memory.WriteBytes((ulong)_detour, detourCode);
+        Flush(_detour, detourCode.Length);
 
         // Overwrite the stub entry with an absolute indirect jump to the detour:
         //   FF 25 00 00 00 00            jmp qword ptr [rip+0]
@@ -75,25 +88,54 @@ public sealed class DebugRegisterHider : IDisposable
         BitConverter.GetBytes((ulong)_detour).CopyTo(patch, 6);
 
         _originalStub = _memory.ReadBytes((ulong)_hookTarget, patch.Length);
-        _memory.WithWritable((ulong)_hookTarget, patch.Length, () => _memory.WriteBytes((ulong)_hookTarget, patch));
+        // From this point onward the entry stub may be partially modified even if the write
+        // reports failure, so rollback must restore it before freeing the detour.
         _installed = true;
+        _memory.WithWritable((ulong)_hookTarget, patch.Length, () => _memory.WriteBytes((ulong)_hookTarget, patch));
+        Flush(_hookTarget, patch.Length);
         return true;
+    }
+
+    private void Flush(IntPtr address, int size)
+    {
+        if (!Win32.FlushInstructionCache(_memory.Handle, address, (nuint)size))
+            throw new IOException(
+                $"FlushInstructionCache failed at 0x{address.ToInt64():X} (err {Marshal.GetLastWin32Error()}).");
+    }
+
+    private void RollBackFailedInstall()
+    {
+        if (_installed)
+        {
+            try { Dispose(); }
+            catch { /* Preserve the original installation failure. */ }
+            return;
+        }
+
+        if (_detour != IntPtr.Zero && !_memory.Process.HasExited)
+            Win32.VirtualFreeEx(_memory.Handle, _detour, 0, Win32.MEM_RELEASE);
+        _detour = IntPtr.Zero;
     }
 
     /// <summary>
     /// The detour: run the real NtGetContextThread syscall, then if the caller requested
     /// CONTEXT_DEBUG_REGISTERS (ContextFlags &amp; 0x10), zero Dr0–Dr3, Dr6, Dr7 in the returned
-    /// CONTEXT so the game sees no breakpoint. rcx=hThread, rdx=pContext on entry (unchanged by
-    /// the syscall), matching NtGetContextThread's own calling convention.
+    /// CONTEXT so the game sees no breakpoint. rcx=hThread and rdx=pContext on entry. The
+    /// context pointer is saved on the stack because volatile argument registers are not
+    /// guaranteed to survive the syscall.
     /// </summary>
     private static byte[] BuildDetour(uint ssn)
     {
         var code = new List<byte>
         {
+            0x52,                               // push rdx          (save pContext)
             0x4C, 0x8B, 0xD1,                   // mov r10, rcx
             0xB8, (byte)ssn, (byte)(ssn >> 8), (byte)(ssn >> 16), (byte)(ssn >> 24), // mov eax, ssn
-            0x0F, 0x05,                         // syscall           (rax=status, rdx preserved)
+            0x0F, 0x05,                         // syscall           (rax=status)
+            0x5A,                               // pop rdx           (restore pContext)
             0x50,                               // push rax          (save status)
+            0x85, 0xC0,                         // test eax, eax
+            0x78, 0x23,                         // js  +0x23 -> pop rax  (failed syscall)
             0x8B, 0x4A, 0x30,                   // mov ecx, [rdx+0x30]   (ContextFlags)
             0xF6, 0xC1, 0x10,                   // test cl, 0x10         (CONTEXT_DEBUG_REGISTERS)
             0x74, 0x1B,                         // jz  +0x1B -> pop rax  (skip zeroing, 27 bytes)
@@ -113,17 +155,30 @@ public sealed class DebugRegisterHider : IDisposable
     public void Dispose()
     {
         if (!_installed) return;
-        _installed = false;
+        bool restored = false;
         try
         {
             if (_originalStub is not null && _hookTarget != IntPtr.Zero && !_memory.Process.HasExited)
+            {
                 _memory.WithWritable((ulong)_hookTarget, _originalStub.Length,
                     () => _memory.WriteBytes((ulong)_hookTarget, _originalStub));
+                Flush(_hookTarget, _originalStub.Length);
+            }
+            restored = true;
         }
-        catch (IOException) { /* target gone — nothing to restore */ }
+        catch (IOException) when (_memory.Process.HasExited)
+        {
+            restored = true;
+        }
 
-        if (_detour != IntPtr.Zero && !_memory.Process.HasExited)
-            Win32.VirtualFreeEx(_memory.Handle, _detour, 0, Win32.MEM_RELEASE);
-        _detour = IntPtr.Zero;
+        // Never free code that the patched stub may still jump to. If restoration failed while
+        // the target is alive, leave the detour allocated and surface the failure to the caller.
+        if (restored)
+        {
+            _installed = false;
+            if (_detour != IntPtr.Zero && !_memory.Process.HasExited)
+                Win32.VirtualFreeEx(_memory.Handle, _detour, 0, Win32.MEM_RELEASE);
+            _detour = IntPtr.Zero;
+        }
     }
 }

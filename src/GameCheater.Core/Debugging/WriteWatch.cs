@@ -40,6 +40,7 @@ public sealed class WriteWatch : IDisposable
     private readonly int _valueSize;
     private readonly bool _clearPeb;
     private readonly bool _periodicReArm;
+    private readonly bool _hideDebugRegisters;
 
     private readonly Dictionary<uint, IntPtr> _threads = new();
     private readonly List<IntPtr> _ownedThreadHandles = new();
@@ -58,10 +59,13 @@ public sealed class WriteWatch : IDisposable
     private int _armedOk;
     private int _reArms;
     private volatile bool _antiDebugEngaged;
+    private volatile bool _debugRegistersHidden;
+    private DebugRegisterHider? _debugRegisterHider;
+    private string? _teardownError;
     private bool _disposed;
 
     private WriteWatch(ProcessMemory memory, ulong address, int size, int slot, bool clearPeb,
-        bool periodicReArm)
+        bool periodicReArm, bool hideDebugRegisters)
     {
         _memory = memory;
         _processId = (uint)memory.Process.Id;
@@ -71,6 +75,7 @@ public sealed class WriteWatch : IDisposable
         _valueSize = Math.Clamp(size, 1, 8);
         _clearPeb = clearPeb;
         _periodicReArm = periodicReArm;
+        _hideDebugRegisters = hideDebugRegisters;
     }
 
     /// <summary>Bytes the CPU is actually watching. Less than the requested size when the
@@ -114,6 +119,12 @@ public sealed class WriteWatch : IDisposable
     /// </summary>
     public bool AntiDebugEngaged => _antiDebugEngaged;
 
+    /// <summary>True when the target-side NtGetContextThread hook was installed successfully.</summary>
+    public bool DebugRegistersHidden => _debugRegistersHidden;
+
+    /// <summary>A cleanup failure that occurred while restoring the target or detaching.</summary>
+    public string? TeardownError => _teardownError;
+
     /// <summary>
     /// Raised the first time a given instruction is seen writing. Fires on the debug loop
     /// thread *while the game is frozen* — do only cheap work here (a UI must marshal).
@@ -131,13 +142,14 @@ public sealed class WriteWatch : IDisposable
     /// kernel-side check; see <see cref="AntiDebug"/>.
     /// </summary>
     public static WriteWatch Start(ProcessMemory memory, ulong address, int size = 4, int slot = 0,
-        bool clearPebDebugFlags = true, bool periodicReArm = false)
+        bool clearPebDebugFlags = true, bool periodicReArm = false, bool hideDebugRegisters = false)
     {
         ArgumentNullException.ThrowIfNull(memory);
         if (slot is < 0 or >= HardwareBreakpoint.SlotCount)
             throw new ArgumentOutOfRangeException(nameof(slot), "Only debug slots 0–3 exist.");
 
-        var watch = new WriteWatch(memory, address, size, slot, clearPebDebugFlags, periodicReArm);
+        var watch = new WriteWatch(memory, address, size, slot, clearPebDebugFlags, periodicReArm,
+            hideDebugRegisters);
         watch._loop = new Thread(watch.Pump)
         {
             IsBackground = true,
@@ -178,7 +190,6 @@ public sealed class WriteWatch : IDisposable
 
         // Do this immediately: without it, the game is killed if this process ever exits.
         Win32.DebugSetProcessKillOnExit(false);
-        _ready.Set();
 
         var upkeep = System.Diagnostics.Stopwatch.StartNew();
         try
@@ -187,8 +198,11 @@ public sealed class WriteWatch : IDisposable
             {
                 if (Win32.WaitForDebugEvent(out var debugEvent, 50))
                 {
+                    bool isInitialEvent = debugEvent.DebugEventCode == Win32.CREATE_PROCESS_DEBUG_EVENT;
                     uint status = Handle(ref debugEvent);
                     Win32.ContinueDebugEvent(debugEvent.ProcessId, debugEvent.ThreadId, status);
+                    if (isInitialEvent)
+                        _ready.Set();
                 }
                 else if (Marshal.GetLastWin32Error() != Win32.ERROR_SEM_TIMEOUT)
                 {
@@ -211,6 +225,11 @@ public sealed class WriteWatch : IDisposable
         }
         finally
         {
+            if (!_ready.IsSet)
+            {
+                _startError ??= "The debug session ended before the initial process event arrived.";
+                _ready.Set();
+            }
             Detach();
         }
     }
@@ -251,11 +270,33 @@ public sealed class WriteWatch : IDisposable
                 // The union carries hFile at offset 0 (ours to close) and hThread at 16.
                 if (e.UnionHandle != IntPtr.Zero)
                     Win32.CloseHandle(e.UnionHandle);
-                Track(e.ThreadId, e.CreateProcessThread);
                 // This is the first event — the target is frozen and hasn't run since attach
                 // set its debugger flag. Scrub it here, before we let it resume, so an
                 // anti-debug poll never sees a debugged PEB.
                 MaybeClearPeb();
+                if (_hideDebugRegisters)
+                {
+                    try
+                    {
+                        _debugRegisterHider = DebugRegisterHider.TryInstall(_memory);
+                        if (_debugRegisterHider is null)
+                            _startError = "Debug-register hiding was requested, but the " +
+                                          "NtGetContextThread hook could not be installed safely.";
+                        else
+                            _debugRegistersHidden = true;
+                    }
+                    catch (Exception ex)
+                    {
+                        _startError = $"Debug-register hiding failed: {ex.Message}";
+                    }
+
+                    if (_startError is not null)
+                    {
+                        _stop = true;
+                        return Win32.DBG_CONTINUE;
+                    }
+                }
+                Track(e.ThreadId, e.CreateProcessThread);
                 return Win32.DBG_CONTINUE;
 
             case Win32.CREATE_THREAD_DEBUG_EVENT:
@@ -456,7 +497,35 @@ public sealed class WriteWatch : IDisposable
             foreach (var thread in threads)
                 HardwareBreakpoint.Disarm(thread, _slot, suspend: true);
 
-            Win32.DebugActiveProcessStop(_processId);
+            // Suspend all tracked threads together while restoring the multi-byte ntdll stub;
+            // this prevents another thread from executing a half-restored instruction stream.
+            var suspended = new List<IntPtr>();
+            foreach (var thread in threads)
+            {
+                if (Win32.SuspendThread(thread) != uint.MaxValue)
+                    suspended.Add(thread);
+            }
+
+            try
+            {
+                _debugRegisterHider?.Dispose();
+                _debugRegisterHider = null;
+                _debugRegistersHidden = false;
+            }
+            catch (Exception ex)
+            {
+                // The hider deliberately keeps its detour allocated when restoration fails,
+                // so detaching cannot leave the target jumping into released memory.
+                _teardownError = $"Failed to restore debug-register hook: {ex.Message}";
+            }
+            finally
+            {
+                foreach (var thread in suspended)
+                    Win32.ResumeThread(thread);
+            }
+
+            if (!Win32.DebugActiveProcessStop(_processId) && _teardownError is null)
+                _teardownError = $"DebugActiveProcessStop failed (err {Marshal.GetLastWin32Error()}).";
         }
 
         lock (_gate)

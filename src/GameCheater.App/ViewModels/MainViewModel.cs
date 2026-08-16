@@ -103,8 +103,8 @@ public sealed class MainViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Rebuild the game picker: embedded baseline (GameCatalog) overlaid by fetched
-    /// definitions (fetched wins). Preserves the current selection by name.
+    /// Rebuild the game picker from the embedded baseline and fetched definitions.
+    /// Fetched cheats win by name while embedded-only cheats remain available.
     /// </summary>
     private void RebuildGames(IEnumerable<TrainerDefinition> defs)
     {
@@ -112,7 +112,17 @@ public sealed class MainViewModel : ViewModelBase
         foreach (var g in GameCatalog.All)
             map[g.Display] = g;
         foreach (var d in defs)
-            map[d.Game] = new GameDef(d.Game, d.Process, () => TrainerDefinitionLoader.ToTrainer(d));
+        {
+            if (map.TryGetValue(d.Game, out var embedded))
+            {
+                map[d.Game] = new GameDef(d.Game, d.Process, () =>
+                    MergeTrainers(embedded.Build(), TrainerDefinitionLoader.ToTrainer(d)));
+            }
+            else
+            {
+                map[d.Game] = new GameDef(d.Game, d.Process, () => TrainerDefinitionLoader.ToTrainer(d));
+            }
+        }
 
         // If a game is currently attached, keep its EXISTING GameDef instance rather than the
         // freshly-built one. Every rebuild otherwise makes a new object per game, so reselecting
@@ -132,6 +142,16 @@ public sealed class MainViewModel : ViewModelBase
         SelectedGame = (current is not null ? Games.FirstOrDefault(g => ReferenceEquals(g, current)) : null)
             ?? Games.FirstOrDefault(g => g.Display == current?.Display)
             ?? Games.FirstOrDefault();
+    }
+
+    private static Trainer MergeTrainers(Trainer embedded, Trainer fetched)
+    {
+        var fetchedNames = fetched.Cheats
+            .Select(cheat => cheat.Name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var cheat in embedded.Cheats.Where(cheat => !fetchedNames.Contains(cheat.Name)))
+            fetched.Add(cheat);
+        return fetched;
     }
 
     /// <summary>Pull the latest definitions from the cheats repo and update the picker live (no restart).</summary>

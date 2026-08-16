@@ -26,16 +26,51 @@ public static class TrainerDefinitionLoader
     {
         skipped = new List<string>();
         var trainer = new Trainer(def.Game, def.Process);
+        var built = new Dictionary<CheatDefinition, Cheat>();
+        var byName = new Dictionary<string, Cheat>(StringComparer.OrdinalIgnoreCase);
+
         foreach (var c in def.Cheats)
         {
+            if (IsComposite(c)) continue;
             var cheat = TryBuild(c);
-            if (cheat is not null) trainer.Add(cheat);
-            else skipped.Add(c.Name);
+            if (cheat is null)
+            {
+                skipped.Add(c.Name);
+                continue;
+            }
+            built[c] = cheat;
+            byName[c.Name] = cheat;
         }
+
+        foreach (var c in def.Cheats.Where(IsComposite))
+        {
+            var names = c.Members?.Where(name => !string.IsNullOrWhiteSpace(name)).ToArray()
+                ?? Array.Empty<string>();
+            if (names.Length == 0 || names.Any(name => !byName.ContainsKey(name)))
+            {
+                skipped.Add(c.Name);
+                continue;
+            }
+
+            built[c] = new CompositeCheat(names.Select(name => byName[name]))
+            {
+                Name = c.Name,
+                Category = c.Category,
+                Description = c.Description,
+            };
+        }
+
+        foreach (var c in def.Cheats)
+            if (built.TryGetValue(c, out var cheat))
+                trainer.Add(cheat);
+
         return trainer;
     }
 
     public static Trainer ToTrainer(TrainerDefinition def) => ToTrainer(def, out _);
+
+    private static bool IsComposite(CheatDefinition c) =>
+        string.Equals(c.Type, "composite", StringComparison.OrdinalIgnoreCase);
 
     private static Cheat? TryBuild(CheatDefinition c)
     {

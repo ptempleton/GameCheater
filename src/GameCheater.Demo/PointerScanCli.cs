@@ -80,6 +80,37 @@ public static class PointerScanCli
         Console.WriteLine($"  \"resolve\": {JsonSerializer.Serialize(ToDto(best), Options)}");
     }
 
+    public static void ResolveSaved(ProcessMemory mem)
+    {
+        var saved = Load();
+        if (saved.Count == 0)
+        {
+            Console.WriteLine($"No saved paths in {PathsFile}. Run --pointer-scan first.");
+            return;
+        }
+
+        Console.WriteLine($"Resolving {saved.Count} saved path(s) without writing memory...\n");
+        foreach (var path in saved)
+        {
+            ulong? address = path.ToResolver()(mem);
+            if (address is not ulong resolved)
+            {
+                Console.WriteLine($"  {path} => unresolved");
+                continue;
+            }
+
+            try
+            {
+                int value = mem.Read<int>(resolved);
+                Console.WriteLine($"  {path} => 0x{resolved:X} (i32 {value})");
+            }
+            catch (IOException)
+            {
+                Console.WriteLine($"  {path} => 0x{resolved:X} (unreadable)");
+            }
+        }
+    }
+
     private static readonly JsonSerializerOptions Options = new() { WriteIndented = false };
 
     private static void Save(IReadOnlyList<PointerPath> paths) =>

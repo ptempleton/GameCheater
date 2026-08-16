@@ -18,7 +18,8 @@ try { Console.OutputEncoding = System.Text.Encoding.UTF8; } catch { /* output re
 // writes" uses to identify (and NOP) the storing instruction. No game or OS needed.
 if (args is ["--selftest", ..])
 {
-    Environment.ExitCode = DecoderSelfTest.Run() == 0 ? 0 : 1;
+    int failed = DecoderSelfTest.Run() + CompositeCheatSelfTest.Run();
+    Environment.ExitCode = failed == 0 ? 0 : 1;
     return;
 }
 
@@ -281,6 +282,17 @@ if (args is ["--pointer-verify", var pvproc, var pvaddr, ..])
 // value over time WITHOUT attaching a debugger. Pure ReadProcessMemory, so it never trips
 // anti-debug; use it to confirm whether an address actually changes (i.e. is it the real
 // value or a stale copy) before spending a debugger attach on it.
+if (args is ["--pointer-resolve", var prproc, ..])
+{
+    using var mem = int.TryParse(prproc, out int prpid)
+        ? ProcessMemory.AttachToId(prpid)
+        : ProcessMemory.Attach(prproc);
+    if (mem is null) { Console.WriteLine($"{prproc} is not running (Windows only)."); return; }
+    Console.WriteLine($"Attached to {mem.Process.ProcessName} (pid {mem.Process.Id}).\n");
+    PointerScanCli.ResolveSaved(mem);
+    return;
+}
+
 if (args is ["--poll", var pproc, var paddr, ..])
 {
     if (!FindWrites.TryParseAddress(paddr, out ulong pollAddr))
@@ -433,8 +445,10 @@ if (args is ["--find-writes", var wproc, var waddr, ..])
     if (mem is null) { Console.WriteLine($"{wproc} is not running (Windows only)."); return; }
     Console.WriteLine($"Attached to {mem.Process.ProcessName} (pid {mem.Process.Id}).\n");
 
-    var session = CaptureSession.Begin(mem, args.Length > 4 ? args[4] : null);
-    FindWrites.Run(mem, address, size, session);
+    string? game = args.Skip(4).FirstOrDefault(a => !a.StartsWith("--", StringComparison.Ordinal));
+    bool hideDebugRegisters = args.Contains("--hide-debug-registers", StringComparer.Ordinal);
+    var session = CaptureSession.Begin(mem, game);
+    FindWrites.Run(mem, address, size, session, hideDebugRegisters);
     WriteCaptures(session);
     return;
 }

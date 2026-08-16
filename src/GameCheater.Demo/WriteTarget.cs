@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using GameCheater.Core.Debugging;
 
 namespace GameCheater.Demo;
 
@@ -13,6 +14,7 @@ namespace GameCheater.Demo;
 public static partial class WriteTarget
 {
     private static volatile bool _stop;
+    private static volatile uint _writerThreadId;
 
     /// <summary>
     /// A second writer that deliberately lives inside a loaded module rather than in JIT'd
@@ -23,6 +25,9 @@ public static partial class WriteTarget
     [LibraryImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static partial bool QueryPerformanceCounter(IntPtr performanceCount);
+
+    [LibraryImport("kernel32.dll")]
+    private static partial uint GetCurrentThreadId();
 
     /// <param name="seconds">Run for a fixed time instead of waiting for Enter. Used when
     /// stdin isn't a console (scripted runs), where ReadLine would return immediately.</param>
@@ -43,6 +48,7 @@ public static partial class WriteTarget
 
         var writer = new Thread(() =>
         {
+            _writerThreadId = GetCurrentThreadId();
             long value = 0;
             while (!_stop)
             {
@@ -58,7 +64,24 @@ public static partial class WriteTarget
         writer.Start();
 
         if (seconds is { } duration)
-            Thread.Sleep(TimeSpan.FromSeconds(duration));
+        {
+            SpinWait.SpinUntil(() => _writerThreadId != 0, TimeSpan.FromSeconds(2));
+            bool? lastVisibility = null;
+            var visibilityTimer = System.Diagnostics.Stopwatch.StartNew();
+            var deadline = DateTime.UtcNow.AddSeconds(duration);
+            while (DateTime.UtcNow < deadline)
+            {
+                bool? visible = DebugRegisterVisibilityProbe.AreRegistersVisible(_writerThreadId);
+                if (visible != lastVisibility)
+                {
+                    Console.WriteLine($"[{visibilityTimer.Elapsed.TotalSeconds:F2}s] " +
+                        $"debug registers visible to target: {visible?.ToString() ?? "probe failed"}");
+                    Console.Out.Flush();
+                    lastVisibility = visible;
+                }
+                Thread.Sleep(250);
+            }
+        }
         else
             Console.ReadLine();
 
