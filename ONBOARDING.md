@@ -132,9 +132,33 @@ durability workflow; only chains that survive a relaunch are trustworthy.
 the tool's collect/poll window has already opened, so early windows caught a parked truck and
 looked dead. Correct flow: have them start driving FIRST, confirm, THEN open the window.
 
-## NEXT
+## No Damage — investigation status (NOT cracked; likely infeasible driver-free)
 
-1. **No Vehicle Damage** — the next target. SnowRunner shows **5 damage components: tires,
+Extensive live work. The chain of findings:
+- The engine/component integrity shown as `current/max` (e.g. `59/180`) is **not** stored as that
+  integer where we can freeze it — every value we find (int `129→…`, fraction `1→0.75`, struct
+  sub-object fields) is a **mirror/copy**: freezing it holds in memory but the on-screen readout
+  and the damage icon don't change. The authoritative value is upstream.
+- Tracing a mirror to its source needs **find-what-writes**. SnowRunner defeats *both* driver-free
+  implementations: the **hardware-breakpoint** version (`find-writes`) — the game reads its own
+  debug registers and self-exits; and now, on first live test, the **page-guard** version
+  (`find-writes-guard`, built this session, `Core/Debugging/PageGuardWatch`) — the game
+  self-exited with **0 page-faults and no PEB flag set**, i.e. it appears to detect the
+  page-protection change itself. `--write-target` proves the page-guard tool works correctly on
+  an unprotected process; it's SnowRunner's layered anti-tamper that blocks it.
+- Conclusion: with both user-mode trace techniques defeated, cracking SnowRunner No Damage would
+  likely require **kernel/hypervisor tooling** (a driver, EPT breakpoints) — outside this
+  project's self-contained, no-external-tools scope. Before concluding for certain, the one thing
+  left to try is confirming the page-guard exit cause: guard-watch a *benign* SnowRunner page and
+  time survival (is it the page-strip that's detected, or something else?), and double-check
+  PageGuardWatch's PEB clearing fires early enough. If page-guard can be made to survive, the
+  mirror→source trace is back on.
+- The page-guard tool is a real, general win for OTHER games (most don't check page protections):
+  `--find-writes-guard <pid> <addr> [size]` finds writers + dumps their registers.
+
+## OTHER NEXT
+
+1. **No Vehicle Damage** — SnowRunner shows **5 damage components: tires,
    suspension, engine, fuel tank, transmission** — so expect up to 5 values, not one. Damage is
    **event-driven** (only changes on impact), so scan unknown-value → take damage → decreased/
    increased, per component. Try **freeze first** (memory writes are unguarded, like fuel); only
