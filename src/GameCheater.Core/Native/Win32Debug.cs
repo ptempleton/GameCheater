@@ -122,4 +122,25 @@ internal static partial class Win32
 
     [LibraryImport("kernel32.dll", SetLastError = true)]
     public static partial uint ResumeThread(IntPtr thread);
+
+    // --- PEB lookup, for reading/clearing the user-mode debugger flags a game polls ---
+
+    /// <summary>The subset of PROCESS_BASIC_INFORMATION we read. On x64 the PEB base sits at
+    /// offset 8 (after the 4-byte ExitStatus, padded to pointer alignment).</summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public struct PROCESS_BASIC_INFORMATION
+    {
+        public IntPtr ExitStatus;
+        public IntPtr PebBaseAddress;
+        public IntPtr AffinityMask;
+        public IntPtr BasePriority;
+        public IntPtr UniqueProcessId;
+        public IntPtr InheritedFromUniqueProcessId;
+    }
+
+    public const int ProcessBasicInformation = 0;
+
+    [LibraryImport("ntdll.dll")]
+    public static partial int NtQueryInformationProcess(IntPtr process, int infoClass,
+        out PROCESS_BASIC_INFORMATION info, uint infoLength, out uint returnLength);
 }

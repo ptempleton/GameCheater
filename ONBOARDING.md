@@ -87,19 +87,54 @@ Verified on Windows end-to-end against `GameCheater.Cli --write-target` (a built
 process with a known address and two known writers, one module-resident and one JIT'd):
 correct instructions and lengths found, writes traced on a worker thread, live NOP stopped the
 writer, restore worked, target survived detach, and the emitted JSON round-trips through
-`--load-json`. **Not yet run against a real game** — that's the next step.
+`--load-json`.
+
+## Anti-debug: SnowRunner is NOT "fine" (correcting the earlier handoff)
+
+Tested live against SnowRunner (Steam, no EAC/BattlEye — Steam-only, still SP-safe). Two layers:
+
+1. **Attach detection (user-mode, BEATEN).** A bare `DebugActiveProcess` makes SnowRunner
+   self-exit within seconds — it polls `PEB.BeingDebugged` (`IsDebuggerPresent`-style). Proven
+   with `--anti-debug-test <pid>`: `BeingDebugged` goes `0→1` on attach; we force it back to `0`
+   and re-scrub on every debug-loop iteration, and the game then ran a full 20s / a full
+   find-writes attach. This is now wired into `WriteWatch` (`clearPebDebugFlags`, default **on**)
+   via `Core/Debugging/AntiDebug`. It only touches the PEB; a **kernel-side** check
+   (`ProcessDebugPort`/`DebugObjectHandle`) would need an ntdll hook inside the target and is NOT
+   handled — `AntiDebugProbe.Diagnosis` tells you which kind you hit, for one game restart.
+   Reading/writing memory (the scanner) never tripped anything — only the debugger attach does.
+2. **The fuel address is a genuine mirror (RE problem, not solved).** With anti-debug beaten,
+   find-writes armed the write breakpoint on **all 157 threads, 0 failures**, game survived —
+   and still saw **zero** writes while driving. So no instruction stores to that virtual address;
+   it's a display copy updated from somewhere else. `--poll <pid> <addr> <size>` (reads only, no
+   attach, no anti-debug risk) is the safe way to confirm an address actually changes before
+   spending an attach on it.
+
+Do NOT re-enable `WriteWatch(periodicReArm: true)` against SnowRunner — that path suspends every
+thread every 400ms and SnowRunner treats the suspension as tamper and exits. It's off by default;
+only for games that actively clear debug registers (none confirmed yet).
 
 ## NEXT
 
-1. **Run it against SnowRunner fuel for real.** Value-scan to the mirror address, `find-writes`
-   on it, NOP the busiest writer, see if the drain stops. If the mirror's writer just copies
-   from elsewhere, chain: read its source operand, scan for that address, repeat. This is the
-   step that turns the tool into an actual shipped cheat.
-2. **Wire it into the Capture tab UI.** Right now it's CLI-only. The natural shape is a "Find
-   what writes" button on a candidate row → writer list → NOP/Save. Note `WriteWatch`'s
-   `WriterDiscovered` fires on the debug thread while the game is frozen, so the UI must
-   marshal and do nothing expensive in the handler.
-3. Hotkeys still need live validation (assign F1, toggle in-game).
+1. **Chain past the fuel mirror.** `--poll` the mirror to confirm it changes; then find what it's
+   copied FROM (read the source operand of whatever writes the *authoritative* value) and
+   find-writes on that. This is the remaining RE step to an actual SnowRunner fuel cheat.
+2. **Validate find-writes on an unprotected game** (Enshrouded/Palworld stamina/hunger — normal
+   stored floats) so the writer-finder is proven on a real game, independent of SnowRunner's
+   mirror weirdness.
+3. **Wire find-writes into the Capture tab UI.** CLI-only today. Shape: a "Find what writes"
+   button on a candidate row → writer list → NOP/Save. `WriteWatch.WriterDiscovered` fires on the
+   debug thread while the game is frozen, so the UI must marshal and do nothing expensive there.
+4. Hotkeys still need live validation (assign F1, toggle in-game).
+
+## Debugger CLI commands (all Administrator, single-player only)
+
+- `--find-writes <process|pid> <hexAddr> [size] [game]` — the main tool. Anti-debug PEB-clearing
+  is on by default; prints per-writer hits, live NOP/restore, durable-AOB save.
+- `--anti-debug-test <process|pid> [seconds] [--no-clear]` — one experiment: is the game's
+  anti-debug user-mode (beatable) or kernel-side? WARNING: if it wins, the game exits.
+- `--poll <process|pid> <hexAddr> [size] [seconds]` — read-only value sampler; no attach, safe.
+- `--write-target [seconds]` — the self-test process for the debugger (known address + writers).
+- `--selftest` — x86-64 length-decoder reference tests (no game needed).
 
 ## Build / run
 

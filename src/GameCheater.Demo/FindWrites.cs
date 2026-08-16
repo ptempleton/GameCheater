@@ -51,6 +51,8 @@ public static class FindWrites
 
             Console.WriteLine("Attached. The game freezes for a moment on every write — expect stutter.\n");
             Collect(watch, 10);
+            if (watch.AntiDebugEngaged)
+                Console.WriteLine("(anti-debug detected and neutralised: the game's PEB debugger flag is being cleared.)");
             Report(watch, patched);
             CommandLoop(watch, mem, session, patched);
         }
@@ -96,6 +98,15 @@ public static class FindWrites
         if (writers.Count == 0)
         {
             Console.WriteLine("No writes seen.");
+            Console.WriteLine($"  diagnostics: armed on {watch.ThreadsArmed} thread install(s), " +
+                              $"{watch.ArmFailures} failure(s), {watch.ReArms} re-arm(s), " +
+                              $"watching {watch.WatchedBytes} byte(s), target exited: {watch.TargetExited}.");
+            if (watch.ThreadsArmed == 0)
+                Console.WriteLine("  • The breakpoint never installed on ANY thread — the attach didn't enumerate " +
+                                  "the game's threads (or it exited first). Writes could not have been caught.");
+            if (watch.ReArms > 0)
+                Console.WriteLine("  • The breakpoint kept getting wiped — the game clears debug registers as " +
+                                  "anti-tamper. Re-arming is on, but writes between wipes can still be missed.");
             Console.WriteLine("  • The value may be recomputed for display and never stored here — re-scan for the");
             Console.WriteLine("    address the game actually keeps, or watch a nearby address in the same struct.");
             Console.WriteLine("  • Or nothing changed it yet: 'w 20' watches for another 20 seconds.");
@@ -322,6 +333,55 @@ public static class FindWrites
               q         quit (restores every patch, clears breakpoints, detaches)
             """);
     }
+
+    /// <summary>
+    /// Sample an address over time with plain reads — no debugger, so no anti-debug risk. Prints
+    /// only when the bytes change, which answers "is this the live value or a dead copy?" before
+    /// we spend a debugger attach hunting a writer that might not exist.
+    /// </summary>
+    public static void Poll(ProcessMemory mem, ulong address, int size, int seconds)
+    {
+        size = Math.Clamp(size, 1, 8);
+        Console.WriteLine($"Polling 0x{address:X} ({size} bytes) for {seconds}s — reads only, no attach.");
+        Console.WriteLine("Change the value in-game (drive, spend). Prints on every change.\n");
+
+        var last = new byte[size];
+        bool have = false;
+        int changes = 0;
+        var buf = new byte[size];
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        int samples = 0;
+
+        while (sw.Elapsed.TotalSeconds < seconds)
+        {
+            if (mem.Process.HasExited) { Console.WriteLine("target exited."); break; }
+            if (mem.TryReadBytes(address, buf, size))
+            {
+                samples++;
+                if (!have || !buf.AsSpan().SequenceEqual(last))
+                {
+                    have = true;
+                    buf.CopyTo(last, 0);
+                    changes++;
+                    Console.WriteLine($"  {sw.Elapsed.TotalSeconds,5:F1}s   {Signature.ToPattern(buf)}   {Interpret(buf)}");
+                }
+            }
+            Thread.Sleep(50);
+        }
+
+        Console.WriteLine($"\n{samples} sample(s), {changes} distinct value(s) over {sw.Elapsed.TotalSeconds:F0}s.");
+        Console.WriteLine(changes > 1
+            ? "→ The value DOES change here — a debugger write breakpoint should be able to catch its writer."
+            : "→ The value did NOT change while polling — either it wasn't touched, or this address is a dead copy.");
+    }
+
+    private static string Interpret(byte[] v) => v.Length switch
+    {
+        >= 8 => $"f64 {BitConverter.ToDouble(v):G6}   i64 {BitConverter.ToInt64(v):N0}",
+        >= 4 => $"f32 {BitConverter.ToSingle(v):G6}   i32 {BitConverter.ToInt32(v):N0}",
+        >= 2 => $"i16 {BitConverter.ToInt16(v)}",
+        _ => $"u8 {v[0]}",
+    };
 
     /// <summary>Parse "0x14ABC" / "14ABC" — the form the Capture tab and the scanner print.</summary>
     public static bool TryParseAddress(string text, out ulong address)

@@ -91,6 +91,47 @@ internal static class HardwareBreakpoint
     /// <summary>True when Dr6 says <paramref name="slot"/> is the breakpoint that just fired.</summary>
     public static bool DidFire(ulong dr6, int slot) => (dr6 & (1UL << slot)) != 0;
 
+    /// <summary>
+    /// Check whether <paramref name="slot"/> is still armed for <paramref name="address"/> on
+    /// this thread, re-arming it if not. Returns true when a re-arm was needed — the signature
+    /// of a game actively clearing debug registers as an anti-tamper measure. The thread is
+    /// suspended for the check since it is running free between debug events.
+    /// </summary>
+    public static bool ReArmIfCleared(IntPtr thread, int slot, ulong address,
+        BreakpointCondition condition, int lengthEncoding)
+    {
+        if (thread == IntPtr.Zero)
+            return false;
+        if (Win32.SuspendThread(thread) == uint.MaxValue)
+            return false;
+
+        try
+        {
+            using var context = new ThreadContextBuffer();
+            if (!context.Load(thread, Win32.CONTEXT_DEBUG_REGISTERS))
+                return false;
+
+            bool enabled = (context.Dr7 & (1UL << (slot * 2))) != 0;
+            bool addressed = context.GetDebugAddress(slot) == address;
+            if (enabled && addressed)
+                return false;   // still armed — nobody touched it
+
+            context.SetDebugAddress(slot, address);
+            ulong dr7 = context.Dr7;
+            dr7 |= 1UL << (slot * 2);
+            dr7 |= 1UL << 8;
+            dr7 &= ~(0xFUL << (16 + slot * 4));
+            dr7 |= (ulong)((lengthEncoding << 2) | (int)condition) << (16 + slot * 4);
+            context.Dr7 = dr7;
+            context.Store(thread, Win32.CONTEXT_DEBUG_REGISTERS);
+            return true;
+        }
+        finally
+        {
+            Win32.ResumeThread(thread);
+        }
+    }
+
     private static bool Modify(IntPtr thread, bool suspend, Action<ThreadContextBuffer> edit)
     {
         if (thread == IntPtr.Zero)

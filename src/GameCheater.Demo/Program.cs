@@ -1,5 +1,6 @@
 using GameCheater.Core.Backend;
 using GameCheater.Core.Cheats;
+using GameCheater.Core.Debugging;
 using GameCheater.Core.Definitions;
 using GameCheater.Core.Distribution;
 using GameCheater.Core.Memory;
@@ -148,6 +149,52 @@ if (args is ["--watch-code", var cproc, ..])
     var session = CaptureSession.Begin(mem, args.Length > 2 ? args[2] : null);
     CodeWatch.Run(mem, session);
     WriteCaptures(session);
+    return;
+}
+
+// Read-only address poll: `--poll <process|pid> <hexAddress> [size] [seconds]` — sample a
+// value over time WITHOUT attaching a debugger. Pure ReadProcessMemory, so it never trips
+// anti-debug; use it to confirm whether an address actually changes (i.e. is it the real
+// value or a stale copy) before spending a debugger attach on it.
+if (args is ["--poll", var pproc, var paddr, ..])
+{
+    if (!FindWrites.TryParseAddress(paddr, out ulong pollAddr))
+    {
+        Console.WriteLine($"'{paddr}' isn't a hex address.");
+        return;
+    }
+    int pollSize = args.Length > 3 && int.TryParse(args[3], out int psz) ? psz : 4;
+    int pollSecs = args.Length > 4 && int.TryParse(args[4], out int psec) ? psec : 20;
+
+    using var mem = int.TryParse(pproc, out int ppid)
+        ? ProcessMemory.AttachToId(ppid)
+        : ProcessMemory.Attach(pproc);
+    if (mem is null) { Console.WriteLine($"{pproc} is not running (Windows only)."); return; }
+
+    FindWrites.Poll(mem, pollAddr, pollSize, pollSecs);
+    return;
+}
+
+// Anti-debug probe: `--anti-debug-test <process|pid> [seconds] [--no-clear]` — attach as a
+// debugger, scrub the PEB debug flags, set NO breakpoint, and time how long the target lives.
+// One controlled experiment to learn whether a game's anti-debug is user-mode (beatable by
+// clearing the PEB) or kernel-side (not). WARNING: if the check wins, the game exits.
+if (args is ["--anti-debug-test", var adproc, ..])
+{
+    int adSeconds = args.Length > 2 && int.TryParse(args[2], out int ads) ? ads : 20;
+    bool clear = !args.Contains("--no-clear");
+
+    using var mem = int.TryParse(adproc, out int adpid)
+        ? ProcessMemory.AttachToId(adpid)
+        : ProcessMemory.Attach(adproc);
+    if (mem is null) { Console.WriteLine($"{adproc} is not running (Windows only)."); return; }
+    Console.WriteLine($"Attached to {mem.Process.ProcessName} (pid {mem.Process.Id}).");
+    Console.WriteLine($"Probing for {adSeconds}s, clear-PEB={clear}. If anti-debug wins, the game will exit.\n");
+
+    var result = AntiDebugProbe.Run(mem, adSeconds, clear, Console.WriteLine);
+    Console.WriteLine($"\n  events:   {result.DebugEvents}   elapsed: {result.SecondsElapsed:F1}s");
+    Console.WriteLine($"  survived: {result.Survived}");
+    Console.WriteLine($"\n→ {result.Diagnosis}");
     return;
 }
 
