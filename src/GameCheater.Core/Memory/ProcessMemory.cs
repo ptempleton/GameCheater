@@ -134,6 +134,22 @@ public sealed class ProcessMemory : IDisposable
         return null;
     }
 
+    /// <summary>
+    /// The target's PEB base address (via <c>NtQueryInformationProcess</c>). The PEB holds the
+    /// user-mode debugger flags — <c>BeingDebugged</c> and <c>NtGlobalFlag</c> — that a game's
+    /// anti-debug polling reads, so this is the entry point for clearing them. Null if the
+    /// query fails. This does NOT reveal kernel-side debug state (the debug port), which no
+    /// amount of PEB editing can mask.
+    /// </summary>
+    public ulong? GetPebBaseAddress()
+    {
+        int status = Win32.NtQueryInformationProcess(_handle, Win32.ProcessBasicInformation,
+            out var info, (uint)Marshal.SizeOf<Win32.PROCESS_BASIC_INFORMATION>(), out _);
+        if (status != 0 || info.PebBaseAddress == IntPtr.Zero)
+            return null;
+        return (ulong)info.PebBaseAddress.ToInt64();
+    }
+
     // --- raw bytes ---
 
     public byte[] ReadBytes(ulong address, int count)

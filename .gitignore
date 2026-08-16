@@ -35,3 +35,6 @@ Thumbs.db
 /*.jpg
 /*.jpeg
 /*.gif
+
+# agent worktrees
+.claude/worktrees/

@@ -51,6 +51,8 @@ public static class FindWrites
 
             Console.WriteLine("Attached. The game freezes for a moment on every write — expect stutter.\n");
             Collect(watch, 10);
+            if (watch.AntiDebugEngaged)
+                Console.WriteLine("(anti-debug detected and neutralised: the game's PEB debugger flag is being cleared.)");
             Report(watch, patched);
             CommandLoop(watch, mem, session, patched);
         }
@@ -96,6 +98,15 @@ public static class FindWrites
         if (writers.Count == 0)
         {
             Console.WriteLine("No writes seen.");
+            Console.WriteLine($"  diagnostics: armed on {watch.ThreadsArmed} thread install(s), " +
+                              $"{watch.ArmFailures} failure(s), {watch.ReArms} re-arm(s), " +
+                              $"watching {watch.WatchedBytes} byte(s), target exited: {watch.TargetExited}.");
+            if (watch.ThreadsArmed == 0)
+                Console.WriteLine("  • The breakpoint never installed on ANY thread — the attach didn't enumerate " +
+                                  "the game's threads (or it exited first). Writes could not have been caught.");
+            if (watch.ReArms > 0)
+                Console.WriteLine("  • The breakpoint kept getting wiped — the game clears debug registers as " +
+                                  "anti-tamper. Re-arming is on, but writes between wipes can still be missed.");
             Console.WriteLine("  • The value may be recomputed for display and never stored here — re-scan for the");
             Console.WriteLine("    address the game actually keeps, or watch a nearby address in the same struct.");
             Console.WriteLine("  • Or nothing changed it yet: 'w 20' watches for another 20 seconds.");
@@ -321,6 +332,110 @@ public static class FindWrites
               s <n>     save writer <n> as a cheat in this session
               q         quit (restores every patch, clears breakpoints, detaches)
             """);
+    }
+
+    /// <summary>
+    /// Sample an address over time with plain reads — no debugger, so no anti-debug risk. Prints
+    /// only when the bytes change, which answers "is this the live value or a dead copy?" before
+    /// we spend a debugger attach hunting a writer that might not exist.
+    /// </summary>
+    public static void Poll(ProcessMemory mem, ulong address, int size, int seconds)
+    {
+        size = Math.Clamp(size, 1, 8);
+        Console.WriteLine($"Polling 0x{address:X} ({size} bytes) for {seconds}s — reads only, no attach.");
+        Console.WriteLine("Change the value in-game (drive, spend). Prints on every change.\n");
+
+        var last = new byte[size];
+        bool have = false;
+        int changes = 0;
+        var buf = new byte[size];
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        int samples = 0;
+
+        while (sw.Elapsed.TotalSeconds < seconds)
+        {
+            if (mem.Process.HasExited) { Console.WriteLine("target exited."); break; }
+            if (mem.TryReadBytes(address, buf, size))
+            {
+                samples++;
+                if (!have || !buf.AsSpan().SequenceEqual(last))
+                {
+                    have = true;
+                    buf.CopyTo(last, 0);
+                    changes++;
+                    Console.WriteLine($"  {sw.Elapsed.TotalSeconds,5:F1}s   {Signature.ToPattern(buf)}   {Interpret(buf)}");
+                }
+            }
+            Thread.Sleep(50);
+        }
+
+        Console.WriteLine($"\n{samples} sample(s), {changes} distinct value(s) over {sw.Elapsed.TotalSeconds:F0}s.");
+        Console.WriteLine(changes > 1
+            ? "→ The value DOES change here — a debugger write breakpoint should be able to catch its writer."
+            : "→ The value did NOT change while polling — either it wasn't touched, or this address is a dead copy.");
+    }
+
+    private static string Interpret(byte[] v) => v.Length switch
+    {
+        >= 8 => $"f64 {BitConverter.ToDouble(v):G6}   i64 {BitConverter.ToInt64(v):N0}",
+        >= 4 => $"f32 {BitConverter.ToSingle(v):G6}   i32 {BitConverter.ToInt32(v):N0}",
+        >= 2 => $"i16 {BitConverter.ToInt16(v)}",
+        _ => $"u8 {v[0]}",
+    };
+
+    /// <summary>
+    /// Hold an address at a fixed value on a tight write loop — the classic value freeze — and
+    /// report whether it sticks. Pure WriteProcessMemory, no debugger, so no anti-debug or
+    /// anti-tamper exposure. If the game keeps recomputing the value from elsewhere it'll fight
+    /// back and the read-back will drift; if this is the authoritative value it pins.
+    /// </summary>
+    public static void FreezeTest(ProcessMemory mem, ulong address, string type, string rawValue, int seconds)
+    {
+        byte[] bytes;
+        Func<byte[], string> show;
+        try
+        {
+            (bytes, show) = type.ToLowerInvariant() switch
+            {
+                "float" => (BitConverter.GetBytes(float.Parse(rawValue)), (Func<byte[], string>)(b => $"{BitConverter.ToSingle(b):G6}")),
+                "double" => (BitConverter.GetBytes(double.Parse(rawValue)), b => $"{BitConverter.ToDouble(b):G6}"),
+                "int" => (BitConverter.GetBytes(int.Parse(rawValue)), b => $"{BitConverter.ToInt32(b):N0}"),
+                "long" => (BitConverter.GetBytes(long.Parse(rawValue)), b => $"{BitConverter.ToInt64(b):N0}"),
+                _ => throw new ArgumentException($"type must be float|double|int|long, got '{type}'"),
+            };
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Bad value/type: {ex.Message}");
+            return;
+        }
+
+        Console.WriteLine($"Freezing 0x{address:X} at {show(bytes)} ({type}) for {seconds}s.");
+        Console.WriteLine("Drive and watch the in-game gauge. Read-back printed each second:\n");
+
+        var readBuf = new byte[bytes.Length];
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        long nextReport = 0;
+        int writes = 0;
+
+        while (sw.Elapsed.TotalSeconds < seconds)
+        {
+            if (mem.Process.HasExited) { Console.WriteLine("target exited."); return; }
+            try { mem.WriteBytes(address, bytes); writes++; }
+            catch { /* transient — keep trying */ }
+
+            if (sw.ElapsedMilliseconds >= nextReport)
+            {
+                string readback = mem.TryReadBytes(address, readBuf, readBuf.Length)
+                    ? show(readBuf) : "(unreadable)";
+                Console.WriteLine($"  {sw.Elapsed.TotalSeconds,5:F1}s   read-back: {readback}");
+                nextReport += 1000;
+            }
+            Thread.Sleep(15);
+        }
+
+        Console.WriteLine($"\n{writes} writes in {seconds}s. If the gauge stopped dropping while you drove,");
+        Console.WriteLine("this is the real value and a plain FreezeCheat is your fuel cheat — no code patch needed.");
     }
 
     /// <summary>Parse "0x14ABC" / "14ABC" — the form the Capture tab and the scanner print.</summary>
