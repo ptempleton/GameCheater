@@ -17,6 +17,10 @@ public sealed class ProcessMemory : IDisposable
     public Process Process { get; }
     public bool IsAttached => _handle != IntPtr.Zero && !Process.HasExited;
 
+    /// <summary>The raw OpenProcess handle, for the debugging classes that call Win32 directly
+    /// (page-guard protection changes, etc.). Internal so the Win32 surface stays inside Core.</summary>
+    internal IntPtr Handle => _handle;
+
     /// <summary>Base address of the main module (the .exe). Signatures scan relative to modules.</summary>
     public ulong MainModuleBase { get; }
     public int MainModuleSize { get; }

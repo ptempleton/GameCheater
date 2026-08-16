@@ -23,7 +23,12 @@ internal sealed class ThreadContextBuffer : IDisposable
     private const int OffsetDr0 = 0x48;   // Dr0..Dr3 are contiguous 8-byte slots
     private const int OffsetDr6 = 0x68;
     private const int OffsetDr7 = 0x70;
+    private const int OffsetEFlags = 0x44;
+    private const int OffsetIntegerRegs = 0x78; // Rax, Rcx, Rdx, Rbx, Rsp, Rbp, Rsi, Rdi, R8..R15
     private const int OffsetRip = 0xF8;
+
+    /// <summary>x86 trap flag: when set, the CPU raises a single-step exception after one instruction.</summary>
+    public const ulong TrapFlag = 0x100;
 
     private IntPtr _allocation;
 
@@ -46,6 +51,23 @@ internal sealed class ThreadContextBuffer : IDisposable
     }
 
     public ulong Rip => (ulong)Marshal.ReadInt64(Pointer, OffsetRip);
+
+    /// <summary>The flags register. Set <see cref="TrapFlag"/> to arm a one-instruction single-step.</summary>
+    public ulong EFlags
+    {
+        get => (uint)Marshal.ReadInt32(Pointer, OffsetEFlags);
+        set => Marshal.WriteInt32(Pointer, OffsetEFlags, (int)(uint)value);
+    }
+
+    /// <summary>The 16 general-purpose registers in CONTEXT order: Rax, Rcx, Rdx, Rbx, Rsp, Rbp,
+    /// Rsi, Rdi, R8..R15. Captured at a fault so we can see where a writer pulled its value from.</summary>
+    public ulong[] GetIntegerRegisters()
+    {
+        var regs = new ulong[16];
+        for (int i = 0; i < 16; i++)
+            regs[i] = (ulong)Marshal.ReadInt64(Pointer, OffsetIntegerRegs + i * 8);
+        return regs;
+    }
 
     public ulong Dr6
     {
