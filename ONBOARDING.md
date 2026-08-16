@@ -146,13 +146,24 @@ Extensive live work. The chain of findings:
   self-exited with **0 page-faults and no PEB flag set**, i.e. it appears to detect the
   page-protection change itself. `--write-target` proves the page-guard tool works correctly on
   an unprotected process; it's SnowRunner's layered anti-tamper that blocks it.
-- Conclusion: with both user-mode trace techniques defeated, cracking SnowRunner No Damage would
-  likely require **kernel/hypervisor tooling** (a driver, EPT breakpoints) — outside this
-  project's self-contained, no-external-tools scope. Before concluding for certain, the one thing
-  left to try is confirming the page-guard exit cause: guard-watch a *benign* SnowRunner page and
-  time survival (is it the page-strip that's detected, or something else?), and double-check
-  PageGuardWatch's PEB clearing fires early enough. If page-guard can be made to survive, the
-  mirror→source trace is back on.
+- **It IS user-mode-doable** — WeMod/WAND ship SnowRunner no-damage with no driver. Two facts make
+  that consistent with everything above: (1) the *shipped* cheat attaches **no debugger** — it's an
+  AOB code-patch (NOP the damage-apply instruction) or a pointer-chain value-freeze, applied by
+  plain memory writes, which SnowRunner allows (fuel proved it). The anti-tamper only fights the
+  *discovery* step, when a debugger is attached. (2) The discovery-time anti-debug is beatable in
+  user mode more thoroughly than our PEB clearing. Real next steps, in order of effort:
+  1. **Re-hunt the authoritative freezable value first (cheapest).** We may have eliminated it
+     during Decreased-narrowing (we narrowed to ONE address and it was a mirror; others were
+     dropped). Redo the exact-value scan keeping ALL survivors and freeze-test EACH at max vs the
+     icon — WeMod may simply freeze a value we discarded.
+  2. **Hide debug registers from the game (ScyllaHide technique).** The HW-breakpoint `find-writes`
+     died because the game reads its own Dr0–7 via `NtGetContextThread`. Inject an inline hook on
+     that (and `NtQueryInformationProcess`) inside the target so it sees zeroed DRs — then
+     `find-writes` survives, finds the damage-apply instruction, and we ship it as a durable AOB
+     `PatchCheat` (runtime never attaches a debugger). This is the likely author workflow.
+  3. Confirm/repair the page-guard exit cause (guard a benign page; check PEB-clear timing) — but
+     (2) is the more proven path.
+  Correction to an earlier note in this file: No Damage does NOT require kernel/hypervisor tooling.
 - The page-guard tool is a real, general win for OTHER games (most don't check page protections):
   `--find-writes-guard <pid> <addr> [size]` finds writers + dumps their registers.
 
