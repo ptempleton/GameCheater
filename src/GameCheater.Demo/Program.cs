@@ -152,6 +152,44 @@ if (args is ["--watch-code", var cproc, ..])
     return;
 }
 
+// Pointer scan: `--pointer-scan <process|pid> <hexAddress> [maxDepth] [maxOffset]` — find static
+// pointer chains that resolve to a heap address, so a value cheat survives relaunches. Then
+// `--pointer-verify <process|pid> <hexAddress>` after a restart keeps only the chains that hold.
+if (args is ["--pointer-scan", var psproc, var psaddr, ..])
+{
+    if (!FindWrites.TryParseAddress(psaddr, out ulong psTarget))
+    {
+        Console.WriteLine($"'{psaddr}' isn't a hex address.");
+        return;
+    }
+    int psDepth = args.Length > 3 && int.TryParse(args[3], out int pd) ? pd : 5;
+    int psOffset = args.Length > 4 && FindWrites.TryParseAddress(args[4], out ulong po) ? (int)po : 0x800;
+
+    using var mem = int.TryParse(psproc, out int pspid)
+        ? ProcessMemory.AttachToId(pspid)
+        : ProcessMemory.Attach(psproc);
+    if (mem is null) { Console.WriteLine($"{psproc} is not running (Windows only)."); return; }
+    Console.WriteLine($"Attached to {mem.Process.ProcessName} (pid {mem.Process.Id}).\n");
+    PointerScanCli.Scan(mem, psTarget, psDepth, psOffset);
+    return;
+}
+
+if (args is ["--pointer-verify", var pvproc, var pvaddr, ..])
+{
+    if (!FindWrites.TryParseAddress(pvaddr, out ulong pvTarget))
+    {
+        Console.WriteLine($"'{pvaddr}' isn't a hex address.");
+        return;
+    }
+    using var mem = int.TryParse(pvproc, out int pvpid)
+        ? ProcessMemory.AttachToId(pvpid)
+        : ProcessMemory.Attach(pvproc);
+    if (mem is null) { Console.WriteLine($"{pvproc} is not running (Windows only)."); return; }
+    Console.WriteLine($"Attached to {mem.Process.ProcessName} (pid {mem.Process.Id}).\n");
+    PointerScanCli.Verify(mem, pvTarget);
+    return;
+}
+
 // Read-only address poll: `--poll <process|pid> <hexAddress> [size] [seconds]` — sample a
 // value over time WITHOUT attaching a debugger. Pure ReadProcessMemory, so it never trips
 // anti-debug; use it to confirm whether an address actually changes (i.e. is it the real

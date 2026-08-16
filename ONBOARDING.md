@@ -102,25 +102,46 @@ Tested live against SnowRunner (Steam, no EAC/BattlEye — Steam-only, still SP-
    (`ProcessDebugPort`/`DebugObjectHandle`) would need an ntdll hook inside the target and is NOT
    handled — `AntiDebugProbe.Diagnosis` tells you which kind you hit, for one game restart.
    Reading/writing memory (the scanner) never tripped anything — only the debugger attach does.
-2. **The fuel address is a genuine mirror (RE problem, not solved).** With anti-debug beaten,
-   find-writes armed the write breakpoint on **all 157 threads, 0 failures**, game survived —
-   and still saw **zero** writes while driving. So no instruction stores to that virtual address;
-   it's a display copy updated from somewhere else. `--poll <pid> <addr> <size>` (reads only, no
-   attach, no anti-debug risk) is the safe way to confirm an address actually changes before
-   spending an attach on it.
+2. **Hardware-breakpoint detection (NOT beaten).** Setting a HW *write* breakpoint (find-writes)
+   makes the game exit within ~10s even with the PEB cleared, armed on all ~160 threads with 0
+   hits — it inspects its own debug registers, which you can't hide a HW breakpoint from. So
+   `find-writes` is unusable against SnowRunner until there's a page-guard (VirtualProtect) watch
+   that uses no debug registers. Not built. Do NOT enable `WriteWatch(periodicReArm: true)` vs
+   SnowRunner either — it suspends every thread every 400ms and the game treats that as tamper.
 
-Do NOT re-enable `WriteWatch(periodicReArm: true)` against SnowRunner — that path suspends every
-thread every 400ms and SnowRunner treats the suspension as tamper and exits. It's off by default;
-only for games that actively clear debug registers (none confirmed yet).
+## FUEL: SOLVED — infinite fuel is a value freeze + durable pointer chain
+
+The earlier handoff's "fuel needs a code patch / it's a mirror" was **wrong**, twice over:
+- The earlier session had scanned onto a **display mirror** (a decoy address). The **range scan**
+  (float) lands on the real value — confirmed with `--poll`: it drops smoothly as you drive.
+- Freezing that real value **holds the in-game gauge** (verified over 60s of driving). Pure
+  `WriteProcessMemory`; no debugger, so none of the anti-tamper above applies. `--freeze <pid>
+  <addr> <type> <value> <seconds>` is the CLI proof tool.
+
+Durable chain (new **pointer scanner**, `Core/Scanning/PointerScanner` + `--pointer-scan` /
+`--pointer-verify`): scan found 60 static chains; **2 survived two ASLR relaunches**, giving:
+
+    SnowRunner.exe + 0x2AA17F0 -> +0x28 -> +0x5E8    (final +0x5E8 = fuel field in the vehicle struct)
+
+Authored as a `freeze`/`float`/`resolveEachTick` cheat (a verified `snowrunner.json` was produced;
+it must be published to the **GameCheater-cheats** repo — the app loads defs from there via
+Refresh, NOT from local files). The `--pointer-scan` → restart → `--pointer-verify` loop is the
+durability workflow; only chains that survive a relaunch are trustworthy.
+
+**Coordination gotcha that cost hours:** the operator reads a "drive now" instruction only AFTER
+the tool's collect/poll window has already opened, so early windows caught a parked truck and
+looked dead. Correct flow: have them start driving FIRST, confirm, THEN open the window.
 
 ## NEXT
 
-1. **Chain past the fuel mirror.** `--poll` the mirror to confirm it changes; then find what it's
-   copied FROM (read the source operand of whatever writes the *authoritative* value) and
-   find-writes on that. This is the remaining RE step to an actual SnowRunner fuel cheat.
-2. **Validate find-writes on an unprotected game** (Enshrouded/Palworld stamina/hunger — normal
-   stored floats) so the writer-finder is proven on a real game, independent of SnowRunner's
-   mirror weirdness.
+1. **No Vehicle Damage** — the next target. SnowRunner shows **5 damage components: tires,
+   suspension, engine, fuel tank, transmission** — so expect up to 5 values, not one. Damage is
+   **event-driven** (only changes on impact), so scan unknown-value → take damage → decreased/
+   increased, per component. Try **freeze first** (memory writes are unguarded, like fuel); only
+   if a component turns out non-freezable do you need the code-patch path — which is blocked by
+   SnowRunner's HW-breakpoint detection until a page-guard watch exists.
+2. **Publish `snowrunner.json`** (Infinite Fuel) to the GameCheater-cheats repo so it shows up in
+   the app's picker after Refresh. Then live-toggle it in the UI as the final end-to-end check.
 3. **Wire find-writes into the Capture tab UI.** CLI-only today. Shape: a "Find what writes"
    button on a candidate row → writer list → NOP/Save. `WriteWatch.WriterDiscovered` fires on the
    debug thread while the game is frozen, so the UI must marshal and do nothing expensive there.
@@ -133,6 +154,12 @@ only for games that actively clear debug registers (none confirmed yet).
 - `--anti-debug-test <process|pid> [seconds] [--no-clear]` — one experiment: is the game's
   anti-debug user-mode (beatable) or kernel-side? WARNING: if it wins, the game exits.
 - `--poll <process|pid> <hexAddr> [size] [seconds]` — read-only value sampler; no attach, safe.
+- `--freeze <process|pid> <hexAddr> <float|double|int|long> <value> [seconds]` — value-freeze test;
+  writes-only, no attach. Proves whether a live value is freezable (how fuel was solved).
+- `--pointer-scan <process|pid> <hexAddr> [maxDepth=5] [maxOffset=0x800]` — find static pointer
+  chains to a heap address; saves candidates to `pointer-paths.json`.
+- `--pointer-verify <process|pid> <hexAddr>` — after a restart+rescan, keep only saved chains that
+  still resolve. Run twice across restarts; survivors are the durable chain.
 - `--write-target [seconds]` — the self-test process for the debugger (known address + writers).
 - `--selftest` — x86-64 length-decoder reference tests (no game needed).
 

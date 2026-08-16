@@ -38,3 +38,7 @@ Thumbs.db
 
 # agent worktrees
 .claude/worktrees/
+
+# pointer-scan output
+pointer-paths.json
+captured-*.json
