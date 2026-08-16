@@ -26,8 +26,18 @@ public static class BisectFreeze
         int size = TypeSize(type);
         if (size == 0) { Console.WriteLine($"Unknown type '{type}' in candidate file."); return; }
 
-        // The set that was FROZEN last round is the first half of the file as it stood then.
-        var all = lines.Skip(1).Select(ParseHex).Where(a => a != 0).ToList();
+        // On "start", drop candidates whose value is unsafe to freeze (pointers, zeros, huge or
+        // denormal numbers) — holding one of those constant hangs the game. An integrity value is
+        // a modest positive number, so keep |v| in [0.0005, 1e6]. Later rounds keep the survivors.
+        var parsed = lines.Skip(1).Select(ParseLine).Where(p => p.Addr != 0).ToList();
+        if (verdict == "start")
+        {
+            int before = parsed.Count;
+            parsed = parsed.Where(p => IsSafeToFreeze(p.Value)).ToList();
+            Console.WriteLine($"Filtered {before} → {parsed.Count} freeze-safe candidate(s) (dropped pointers/zeros/huge values).");
+        }
+
+        var all = parsed.Select(p => p.Addr).ToList();
         int frozenCount = (all.Count + 1) / 2;
 
         List<ulong> working = verdict switch
@@ -66,7 +76,13 @@ public static class BisectFreeze
         int writes = 0;
         while (sw.Elapsed.TotalSeconds < seconds)
         {
-            if (mem.Process.HasExited) { Console.WriteLine("target exited."); return; }
+            if (mem.Process.HasExited)
+            {
+                Console.WriteLine("\nTHE GAME EXITED while this half was frozen — one of these addresses is unsafe.");
+                Console.WriteLine("Re-scan/re-export, then re-run; the safety filter should exclude it. If it recurs,");
+                Console.WriteLine("this half is the risky one — after relaunch, run with 'dropping' to search the other half.");
+                return;
+            }
             foreach (var (addr, bytes) in held)
             {
                 try { mem.WriteBytes(addr, bytes); writes++; } catch { }
@@ -84,6 +100,24 @@ public static class BisectFreeze
         var outLines = new List<string> { type };
         outLines.AddRange(working.Select(a => "0x" + a.ToString("X")));
         File.WriteAllLines(file, outLines);
+    }
+
+    private static (ulong Addr, double Value) ParseLine(string line)
+    {
+        var parts = line.Split('=', 2);
+        ulong addr = ParseHex(parts[0]);
+        double value = parts.Length > 1
+            && double.TryParse(parts[1].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var v) ? v : double.NaN;
+        return (addr, value);
+    }
+
+    /// <summary>An integrity value is a modest positive number; a pointer/size/counter is huge,
+    /// zero, or denormal — freezing those hangs the game, so exclude them.</summary>
+    private static bool IsSafeToFreeze(double value)
+    {
+        if (double.IsNaN(value) || double.IsInfinity(value)) return false;
+        double a = Math.Abs(value);
+        return a is >= 0.0005 and <= 1_000_000;
     }
 
     private static ulong ParseHex(string s)

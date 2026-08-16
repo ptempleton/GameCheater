@@ -79,8 +79,10 @@ public sealed class CaptureViewModel : ViewModelBase
         Directory.CreateDirectory(dir);
         string path = Path.Combine(dir, "candidates.txt");
 
+        // "0xADDR=value" — the value lets the bisect skip non-integrity candidates (pointers,
+        // zeros, huge numbers) that would hang the game if frozen.
         var lines = new List<string> { _session.TypeName };
-        lines.AddRange(_session.Top(cap).Select(c => "0x" + c.Address.ToString("X")));
+        lines.AddRange(_session.Top(cap).Select(c => $"0x{c.Address:X}={c.Value}"));
         File.WriteAllText(path, string.Join('\n', lines));
 
         Status = $"Exported {lines.Count - 1} candidate(s) to {path}";
