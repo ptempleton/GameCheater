@@ -152,6 +152,58 @@ if (args is ["--watch-code", var cproc, ..])
     return;
 }
 
+// Struct diff: `--struct-diff <process|pid> <moduleOffsetHex> <derefOffsetsCsv> [windowHex] [seconds]`
+// — resolve a known struct pointer and report which float fields change on an in-game event.
+// For values with no searchable number (a damage icon, not a readout): snapshot, trigger it, see
+// what moved. Read-only, no debugger. SnowRunner vehicle struct: moduleOffset 0x2AA17F0, derefs 0x28.
+if (args is ["--struct-diff", var sdproc, var sdmod, var sdoffs, ..])
+{
+    if (!FindWrites.TryParseAddress(sdmod, out ulong sdModuleOffset))
+    {
+        Console.WriteLine($"'{sdmod}' isn't a hex module offset.");
+        return;
+    }
+    int[] sdDerefs = sdoffs.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+        .Select(s => FindWrites.TryParseAddress(s, out ulong v) ? (int)v : 0)
+        .ToArray();
+    int sdWindow = args.Length > 4 && FindWrites.TryParseAddress(args[4], out ulong w) ? (int)w : 0x1000;
+    int sdSeconds = args.Length > 5 && int.TryParse(args[5], out int s) ? s : 25;
+
+    using var mem = int.TryParse(sdproc, out int sdpid)
+        ? ProcessMemory.AttachToId(sdpid)
+        : ProcessMemory.Attach(sdproc);
+    if (mem is null) { Console.WriteLine($"{sdproc} is not running (Windows only)."); return; }
+    Console.WriteLine($"Attached to {mem.Process.ProcessName} (pid {mem.Process.Id}).\n");
+    StructDiff.Run(mem, sdModuleOffset, sdDerefs, sdWindow, sdSeconds);
+    return;
+}
+
+// Vehicle scan: `--vehicle-scan <process|pid> <moduleOffsetHex> <derefOffsetsCsv> [structWin] [subWin] [seconds]`
+// — like --struct-diff, but also follows the struct's pointer fields into their sub-objects and
+// diffs those. For per-component values (vehicle damage) that live in heap sub-objects, not inline.
+if (args is ["--vehicle-scan", var vsproc, var vsmod, var vsoffs, ..])
+{
+    if (!FindWrites.TryParseAddress(vsmod, out ulong vsModuleOffset))
+    {
+        Console.WriteLine($"'{vsmod}' isn't a hex module offset.");
+        return;
+    }
+    int[] vsDerefs = vsoffs.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+        .Select(s => FindWrites.TryParseAddress(s, out ulong v) ? (int)v : 0)
+        .ToArray();
+    int vsStructWin = args.Length > 4 && FindWrites.TryParseAddress(args[4], out ulong sw2) ? (int)sw2 : 0x800;
+    int vsSubWin = args.Length > 5 && FindWrites.TryParseAddress(args[5], out ulong sw3) ? (int)sw3 : 0x400;
+    int vsSeconds = args.Length > 6 && int.TryParse(args[6], out int s2) ? s2 : 25;
+
+    using var mem = int.TryParse(vsproc, out int vspid)
+        ? ProcessMemory.AttachToId(vspid)
+        : ProcessMemory.Attach(vsproc);
+    if (mem is null) { Console.WriteLine($"{vsproc} is not running (Windows only)."); return; }
+    Console.WriteLine($"Attached to {mem.Process.ProcessName} (pid {mem.Process.Id}).\n");
+    StructDiff.FollowScan(mem, vsModuleOffset, vsDerefs, vsStructWin, vsSubWin, vsSeconds);
+    return;
+}
+
 // Pointer scan: `--pointer-scan <process|pid> <hexAddress> [maxDepth] [maxOffset]` — find static
 // pointer chains that resolve to a heap address, so a value cheat survives relaunches. Then
 // `--pointer-verify <process|pid> <hexAddress>` after a restart keeps only the chains that hold.
@@ -232,6 +284,30 @@ if (args is ["--freeze", var fproc, var faddr, var ftype, var fval, ..])
     if (mem is null) { Console.WriteLine($"{fproc} is not running (Windows only)."); return; }
 
     FindWrites.FreezeTest(mem, freezeAddr, ftype, fval, freezeSecs);
+    return;
+}
+
+// Chain freeze: `--freeze-chain <process|pid> <moduleOffsetHex> <offsetsCsv> <type> <value> [seconds]`
+// — freeze via a pointer chain, re-resolved each tick, so it follows a struct that relocates
+// (SnowRunner recovers/garage moves it). The correct way to test a field inside a moving struct.
+if (args is ["--freeze-chain", var fcproc, var fcmod, var fcoffs, var fctype, var fcval, ..])
+{
+    if (!FindWrites.TryParseAddress(fcmod, out ulong fcModuleOffset))
+    {
+        Console.WriteLine($"'{fcmod}' isn't a hex module offset.");
+        return;
+    }
+    int[] fcOffsets = fcoffs.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+        .Select(s => FindWrites.TryParseAddress(s, out ulong v) ? (int)v : 0)
+        .ToArray();
+    int fcSeconds = args.Length > 6 && int.TryParse(args[6], out int fcs) ? fcs : 20;
+
+    using var mem = int.TryParse(fcproc, out int fcpid)
+        ? ProcessMemory.AttachToId(fcpid)
+        : ProcessMemory.Attach(fcproc);
+    if (mem is null) { Console.WriteLine($"{fcproc} is not running (Windows only)."); return; }
+    Console.WriteLine($"Attached to {mem.Process.ProcessName} (pid {mem.Process.Id}).\n");
+    FindWrites.FreezeChain(mem, fcModuleOffset, fcOffsets, fctype, fcval, fcSeconds);
     return;
 }
 
