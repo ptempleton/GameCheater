@@ -132,7 +132,14 @@ durability workflow; only chains that survive a relaunch are trustworthy.
 the tool's collect/poll window has already opened, so early windows caught a parked truck and
 looked dead. Correct flow: have them start driving FIRST, confirm, THEN open the window.
 
-## No Damage — investigation status (NOT cracked; likely infeasible driver-free)
+## No Damage — see the full writeup
+
+**`docs/NO-DAMAGE-FINDINGS.md` is the complete, current handoff** for the No Damage work — every
+approach tried, the mirror problem, the anti-tamper findings, the tool list, and the concrete next
+steps (the half-built debug-register hider). Read that first. The section below is the older
+summary, kept for context.
+
+## No Damage — investigation status (NOT cracked)
 
 Extensive live work. The chain of findings:
 - The engine/component integrity shown as `current/max` (e.g. `59/180`) is **not** stored as that
