@@ -132,9 +132,44 @@ durability workflow; only chains that survive a relaunch are trustworthy.
 the tool's collect/poll window has already opened, so early windows caught a parked truck and
 looked dead. Correct flow: have them start driving FIRST, confirm, THEN open the window.
 
-## NEXT
+## No Damage — investigation status (NOT cracked; likely infeasible driver-free)
 
-1. **No Vehicle Damage** — the next target. SnowRunner shows **5 damage components: tires,
+Extensive live work. The chain of findings:
+- The engine/component integrity shown as `current/max` (e.g. `59/180`) is **not** stored as that
+  integer where we can freeze it — every value we find (int `129→…`, fraction `1→0.75`, struct
+  sub-object fields) is a **mirror/copy**: freezing it holds in memory but the on-screen readout
+  and the damage icon don't change. The authoritative value is upstream.
+- Tracing a mirror to its source needs **find-what-writes**. SnowRunner defeats *both* driver-free
+  implementations: the **hardware-breakpoint** version (`find-writes`) — the game reads its own
+  debug registers and self-exits; and now, on first live test, the **page-guard** version
+  (`find-writes-guard`, built this session, `Core/Debugging/PageGuardWatch`) — the game
+  self-exited with **0 page-faults and no PEB flag set**, i.e. it appears to detect the
+  page-protection change itself. `--write-target` proves the page-guard tool works correctly on
+  an unprotected process; it's SnowRunner's layered anti-tamper that blocks it.
+- **It IS user-mode-doable** — WeMod/WAND ship SnowRunner no-damage with no driver. Two facts make
+  that consistent with everything above: (1) the *shipped* cheat attaches **no debugger** — it's an
+  AOB code-patch (NOP the damage-apply instruction) or a pointer-chain value-freeze, applied by
+  plain memory writes, which SnowRunner allows (fuel proved it). The anti-tamper only fights the
+  *discovery* step, when a debugger is attached. (2) The discovery-time anti-debug is beatable in
+  user mode more thoroughly than our PEB clearing. Real next steps, in order of effort:
+  1. **Re-hunt the authoritative freezable value first (cheapest).** We may have eliminated it
+     during Decreased-narrowing (we narrowed to ONE address and it was a mirror; others were
+     dropped). Redo the exact-value scan keeping ALL survivors and freeze-test EACH at max vs the
+     icon — WeMod may simply freeze a value we discarded.
+  2. **Hide debug registers from the game (ScyllaHide technique).** The HW-breakpoint `find-writes`
+     died because the game reads its own Dr0–7 via `NtGetContextThread`. Inject an inline hook on
+     that (and `NtQueryInformationProcess`) inside the target so it sees zeroed DRs — then
+     `find-writes` survives, finds the damage-apply instruction, and we ship it as a durable AOB
+     `PatchCheat` (runtime never attaches a debugger). This is the likely author workflow.
+  3. Confirm/repair the page-guard exit cause (guard a benign page; check PEB-clear timing) — but
+     (2) is the more proven path.
+  Correction to an earlier note in this file: No Damage does NOT require kernel/hypervisor tooling.
+- The page-guard tool is a real, general win for OTHER games (most don't check page protections):
+  `--find-writes-guard <pid> <addr> [size]` finds writers + dumps their registers.
+
+## OTHER NEXT
+
+1. **No Vehicle Damage** — SnowRunner shows **5 damage components: tires,
    suspension, engine, fuel tank, transmission** — so expect up to 5 values, not one. Damage is
    **event-driven** (only changes on impact), so scan unknown-value → take damage → decreased/
    increased, per component. Try **freeze first** (memory writes are unguarded, like fuel); only

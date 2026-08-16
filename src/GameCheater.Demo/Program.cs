@@ -222,15 +222,20 @@ if (args is ["--struct-find", var sfproc, var sfmod, var sfoffs, var sfval, ..])
         Console.WriteLine($"'{sfval}' isn't a number.");
         return;
     }
-    int sfStructWin = args.Length > 5 && FindWrites.TryParseAddress(args[5], out ulong sw4) ? (int)sw4 : 0x800;
-    int sfSubWin = args.Length > 6 && FindWrites.TryParseAddress(args[6], out ulong sw5) ? (int)sw5 : 0x400;
+    // Optional `--tol <t>` anywhere in the args: match floats within +/- t (for fraction-stored
+    // values like 152/180 = 0.8444). Windows keep their positional slots.
+    float sfTol = 0f;
+    int tolIdx = Array.IndexOf(args, "--tol");
+    if (tolIdx >= 0 && tolIdx + 1 < args.Length) float.TryParse(args[tolIdx + 1], out sfTol);
+    int sfStructWin = args.Length > 5 && args[5] != "--tol" && FindWrites.TryParseAddress(args[5], out ulong sw4) ? (int)sw4 : 0x800;
+    int sfSubWin = args.Length > 6 && args[6] != "--tol" && FindWrites.TryParseAddress(args[6], out ulong sw5) ? (int)sw5 : 0x400;
 
     using var mem = int.TryParse(sfproc, out int sfpid)
         ? ProcessMemory.AttachToId(sfpid)
         : ProcessMemory.Attach(sfproc);
     if (mem is null) { Console.WriteLine($"{sfproc} is not running (Windows only)."); return; }
     Console.WriteLine($"Attached to {mem.Process.ProcessName} (pid {mem.Process.Id}).\n");
-    StructDiff.Find(mem, sfModuleOffset, sfDerefs, sfStructWin, sfSubWin, sfTarget);
+    StructDiff.Find(mem, sfModuleOffset, sfDerefs, sfStructWin, sfSubWin, sfTarget, sfTol);
     return;
 }
 
@@ -361,6 +366,27 @@ if (args is ["--anti-debug-test", var adproc, ..])
     Console.WriteLine($"\n  events:   {result.DebugEvents}   elapsed: {result.SecondsElapsed:F1}s");
     Console.WriteLine($"  survived: {result.Survived}");
     Console.WriteLine($"\n→ {result.Diagnosis}");
+    return;
+}
+
+// Page-guard find-what-writes: `--find-writes-guard <process|pid> <hexAddress> [size]` — like
+// --find-writes but uses page protection instead of debug registers, so it beats
+// hardware-breakpoint-detecting anti-tamper (SnowRunner). Reports writers + their registers.
+if (args is ["--find-writes-guard", var gproc, var gaddr, ..])
+{
+    if (!FindWrites.TryParseAddress(gaddr, out ulong gAddress))
+    {
+        Console.WriteLine($"'{gaddr}' isn't a hex address.");
+        return;
+    }
+    int gSize = args.Length > 3 && int.TryParse(args[3], out int gs) ? gs : 4;
+
+    using var mem = int.TryParse(gproc, out int gpid)
+        ? ProcessMemory.AttachToId(gpid)
+        : ProcessMemory.Attach(gproc);
+    if (mem is null) { Console.WriteLine($"{gproc} is not running (Windows only)."); return; }
+    Console.WriteLine($"Attached to {mem.Process.ProcessName} (pid {mem.Process.Id}).\n");
+    FindWritesGuard.Run(mem, gAddress, gSize);
     return;
 }
 

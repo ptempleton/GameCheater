@@ -207,7 +207,7 @@ public static class StructDiff
     /// neighboring cells, so a current/max pair (59 next to 180) is obvious.
     /// </summary>
     public static void Find(ProcessMemory mem, ulong moduleOffset, int[] derefOffsets,
-        int structWindow, int subWindow, float target)
+        int structWindow, int subWindow, float target, float tolerance = 0f)
     {
         ulong? structBase = ResolveStruct(mem, moduleOffset, derefOffsets);
         if (structBase is null) { Console.WriteLine("Couldn't resolve the struct pointer."); return; }
@@ -235,7 +235,8 @@ public static class StructDiff
         }
 
         int iTarget = (int)target;
-        Console.WriteLine($"Searching struct + {regions.Count - 1} sub-object(s) for {target:G6} (int {iTarget})…\n");
+        string how = tolerance > 0 ? $"{target:G6} ±{tolerance:G4} (fraction match)" : $"{target:G6} (int {iTarget})";
+        Console.WriteLine($"Searching struct + {regions.Count - 1} sub-object(s) for {how}…\n");
         int hits = 0;
         foreach (var (chain, b, size) in regions)
         {
@@ -246,7 +247,13 @@ public static class StructDiff
             {
                 float f = BitConverter.ToSingle(buf, i * 4);
                 int iv = BitConverter.ToInt32(buf, i * 4);
-                if (f != target && iv != iTarget) continue;
+                // With a tolerance, match a float within a band (for fraction-stored values like
+                // 152/180 = 0.8444). Skip NaN/inf and absurd magnitudes so denormal junk doesn't hit.
+                bool floatHit = tolerance > 0
+                    ? !float.IsNaN(f) && !float.IsInfinity(f) && MathF.Abs(f - target) <= tolerance
+                    : f == target;
+                bool intHit = tolerance == 0 && iv == iTarget;
+                if (!floatHit && !intHit) continue;
 
                 int off = i * 4;
                 // Show a few neighbors to reveal a current/max pair.
@@ -258,7 +265,7 @@ public static class StructDiff
                     nb.Add($"{mark}+0x{j * 4:X}={(nf == MathF.Round(nf) && MathF.Abs(nf) < 1e6 ? ((int)nf).ToString() : nf.ToString("G4"))}");
                 }
                 string chainForField = chain.Replace("<field>", $"0x{off:X}");
-                Console.WriteLine($"  0x{b + (ulong)off:X}  chain[{chainForField}]");
+                Console.WriteLine($"  0x{b + (ulong)off:X}  = {f:G6}   chain[{chainForField}]");
                 Console.WriteLine($"      neighbors: {string.Join("  ", nb)}");
                 hits++;
                 if (hits >= 60) { Console.WriteLine("  …(stopping at 60)"); return; }

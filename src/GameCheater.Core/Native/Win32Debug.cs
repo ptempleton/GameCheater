@@ -31,6 +31,8 @@ internal static partial class Win32
     public const uint EXCEPTION_SINGLE_STEP = 0x80000004;
     /// <summary>The synthetic int3 the OS injects into the target when a debugger attaches.</summary>
     public const uint EXCEPTION_BREAKPOINT = 0x80000003;
+    /// <summary>Raised when code touches a page whose protection we stripped — the page-guard watch.</summary>
+    public const uint EXCEPTION_ACCESS_VIOLATION = 0xC0000005;
 
     // --- CONTEXT.ContextFlags (amd64) ---
     public const uint CONTEXT_AMD64 = 0x00100000;
@@ -68,6 +70,12 @@ internal static partial class Win32
         [FieldOffset(16)] public uint ExceptionCode;
         [FieldOffset(32)] public IntPtr ExceptionAddress;
         [FieldOffset(168)] public uint FirstChance;
+
+        // EXCEPTION_RECORD.ExceptionInformation for an access violation: [0] is the access kind
+        // (0 read, 1 write, 8 DEP) and [1] is the faulting virtual address — how the page-guard
+        // watch learns which byte was written and whether it's the one we care about.
+        [FieldOffset(48)] public ulong ExceptionInformation0;
+        [FieldOffset(56)] public ulong ExceptionInformation1;
 
         /// <summary>
         /// Union offset 0, which is <c>hThread</c> for CREATE_THREAD_DEBUG_EVENT and
