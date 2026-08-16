@@ -383,6 +383,61 @@ public static class FindWrites
         _ => $"u8 {v[0]}",
     };
 
+    /// <summary>
+    /// Hold an address at a fixed value on a tight write loop — the classic value freeze — and
+    /// report whether it sticks. Pure WriteProcessMemory, no debugger, so no anti-debug or
+    /// anti-tamper exposure. If the game keeps recomputing the value from elsewhere it'll fight
+    /// back and the read-back will drift; if this is the authoritative value it pins.
+    /// </summary>
+    public static void FreezeTest(ProcessMemory mem, ulong address, string type, string rawValue, int seconds)
+    {
+        byte[] bytes;
+        Func<byte[], string> show;
+        try
+        {
+            (bytes, show) = type.ToLowerInvariant() switch
+            {
+                "float" => (BitConverter.GetBytes(float.Parse(rawValue)), (Func<byte[], string>)(b => $"{BitConverter.ToSingle(b):G6}")),
+                "double" => (BitConverter.GetBytes(double.Parse(rawValue)), b => $"{BitConverter.ToDouble(b):G6}"),
+                "int" => (BitConverter.GetBytes(int.Parse(rawValue)), b => $"{BitConverter.ToInt32(b):N0}"),
+                "long" => (BitConverter.GetBytes(long.Parse(rawValue)), b => $"{BitConverter.ToInt64(b):N0}"),
+                _ => throw new ArgumentException($"type must be float|double|int|long, got '{type}'"),
+            };
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Bad value/type: {ex.Message}");
+            return;
+        }
+
+        Console.WriteLine($"Freezing 0x{address:X} at {show(bytes)} ({type}) for {seconds}s.");
+        Console.WriteLine("Drive and watch the in-game gauge. Read-back printed each second:\n");
+
+        var readBuf = new byte[bytes.Length];
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        long nextReport = 0;
+        int writes = 0;
+
+        while (sw.Elapsed.TotalSeconds < seconds)
+        {
+            if (mem.Process.HasExited) { Console.WriteLine("target exited."); return; }
+            try { mem.WriteBytes(address, bytes); writes++; }
+            catch { /* transient — keep trying */ }
+
+            if (sw.ElapsedMilliseconds >= nextReport)
+            {
+                string readback = mem.TryReadBytes(address, readBuf, readBuf.Length)
+                    ? show(readBuf) : "(unreadable)";
+                Console.WriteLine($"  {sw.Elapsed.TotalSeconds,5:F1}s   read-back: {readback}");
+                nextReport += 1000;
+            }
+            Thread.Sleep(15);
+        }
+
+        Console.WriteLine($"\n{writes} writes in {seconds}s. If the gauge stopped dropping while you drove,");
+        Console.WriteLine("this is the real value and a plain FreezeCheat is your fuel cheat — no code patch needed.");
+    }
+
     /// <summary>Parse "0x14ABC" / "14ABC" — the form the Capture tab and the scanner print.</summary>
     public static bool TryParseAddress(string text, out ulong address)
     {

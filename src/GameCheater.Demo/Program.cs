@@ -175,6 +175,28 @@ if (args is ["--poll", var pproc, var paddr, ..])
     return;
 }
 
+// Freeze test: `--freeze <process|pid> <hexAddress> <type> <value> [seconds]` — write a value
+// on a tight loop (the classic value-freeze) and report whether it holds. Uses only
+// WriteProcessMemory (no debugger), so it carries no anti-debug/anti-tamper risk. This is the
+// cheapest possible cheat and the first thing to try on a live, writable value.
+if (args is ["--freeze", var fproc, var faddr, var ftype, var fval, ..])
+{
+    if (!FindWrites.TryParseAddress(faddr, out ulong freezeAddr))
+    {
+        Console.WriteLine($"'{faddr}' isn't a hex address.");
+        return;
+    }
+    int freezeSecs = args.Length > 5 && int.TryParse(args[5], out int fs) ? fs : 15;
+
+    using var mem = int.TryParse(fproc, out int fpid)
+        ? ProcessMemory.AttachToId(fpid)
+        : ProcessMemory.Attach(fproc);
+    if (mem is null) { Console.WriteLine($"{fproc} is not running (Windows only)."); return; }
+
+    FindWrites.FreezeTest(mem, freezeAddr, ftype, fval, freezeSecs);
+    return;
+}
+
 // Anti-debug probe: `--anti-debug-test <process|pid> [seconds] [--no-clear]` — attach as a
 // debugger, scrub the PEB debug flags, set NO breakpoint, and time how long the target lives.
 // One controlled experiment to learn whether a game's anti-debug is user-mode (beatable by
