@@ -438,6 +438,69 @@ public static class FindWrites
         Console.WriteLine("this is the real value and a plain FreezeCheat is your fuel cheat — no code patch needed.");
     }
 
+    /// <summary>
+    /// Freeze via a pointer CHAIN, re-resolved every tick. Essential when the target struct
+    /// relocates within a session (SnowRunner's vehicle struct does): a raw-address freeze goes
+    /// stale the instant the struct moves, but a chain follows it. This is the correct way to
+    /// test a candidate field that lives inside a moving struct.
+    /// </summary>
+    public static void FreezeChain(ProcessMemory mem, ulong moduleOffset, int[] offsets,
+        string type, string rawValue, int seconds)
+    {
+        byte[] bytes;
+        Func<byte[], string> show;
+        try
+        {
+            (bytes, show) = type.ToLowerInvariant() switch
+            {
+                "float" => (BitConverter.GetBytes(float.Parse(rawValue)), (Func<byte[], string>)(b => $"{BitConverter.ToSingle(b):G6}")),
+                "double" => (BitConverter.GetBytes(double.Parse(rawValue)), b => $"{BitConverter.ToDouble(b):G6}"),
+                "int" => (BitConverter.GetBytes(int.Parse(rawValue)), b => $"{BitConverter.ToInt32(b):N0}"),
+                "long" => (BitConverter.GetBytes(long.Parse(rawValue)), b => $"{BitConverter.ToInt64(b):N0}"),
+                _ => throw new ArgumentException($"type must be float|double|int|long, got '{type}'"),
+            };
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Bad value/type: {ex.Message}");
+            return;
+        }
+
+        var chain = new PointerChain(mem.MainModuleBase + moduleOffset, offsets);
+        string offsetsText = string.Join(" -> ", offsets.Select(o => "+0x" + o.ToString("X")));
+        Console.WriteLine($"Freezing [{mem.Process.ProcessName}.exe+0x{moduleOffset:X} {offsetsText}] at {show(bytes)} ({type}) for {seconds}s.");
+        Console.WriteLine("Chain re-resolves each tick (follows the moving struct). Resolved addr + read-back per second:\n");
+
+        var readBuf = new byte[bytes.Length];
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        long nextReport = 0;
+        int writes = 0, resolveFails = 0;
+
+        while (sw.Elapsed.TotalSeconds < seconds)
+        {
+            if (mem.Process.HasExited) { Console.WriteLine("target exited."); return; }
+            ulong? addr = chain.Resolve(mem);
+            if (addr is { } a)
+            {
+                try { mem.WriteBytes(a, bytes); writes++; } catch { }
+                if (sw.ElapsedMilliseconds >= nextReport)
+                {
+                    string readback = mem.TryReadBytes(a, readBuf, readBuf.Length) ? show(readBuf) : "(unreadable)";
+                    Console.WriteLine($"  {sw.Elapsed.TotalSeconds,5:F1}s   addr 0x{a:X}   read-back: {readback}");
+                    nextReport += 1000;
+                }
+            }
+            else
+            {
+                resolveFails++;
+            }
+            Thread.Sleep(15);
+        }
+
+        Console.WriteLine($"\n{writes} writes, {resolveFails} resolve-fail(s) in {seconds}s.");
+        Console.WriteLine("If the damage icon stayed clean while you hit it, this chain is the cheat (author as freeze + resolveEachTick).");
+    }
+
     /// <summary>Parse "0x14ABC" / "14ABC" — the form the Capture tab and the scanner print.</summary>
     public static bool TryParseAddress(string text, out ulong address)
     {
