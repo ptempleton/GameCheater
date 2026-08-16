@@ -201,6 +201,76 @@ public static class StructDiff
     }
 
     /// <summary>
+    /// Search the vehicle struct and its sub-objects for a known value (e.g. engine integrity
+    /// 59, or its max 180). Once the game shows real numbers, this pinpoints the field's chain
+    /// instantly — no whole-memory scan. Each hit prints its chain [0x28, subOff, fieldOff] plus
+    /// neighboring cells, so a current/max pair (59 next to 180) is obvious.
+    /// </summary>
+    public static void Find(ProcessMemory mem, ulong moduleOffset, int[] derefOffsets,
+        int structWindow, int subWindow, float target)
+    {
+        ulong? structBase = ResolveStruct(mem, moduleOffset, derefOffsets);
+        if (structBase is null) { Console.WriteLine("Couldn't resolve the struct pointer."); return; }
+        ulong root = structBase.Value;
+
+        var regions = new List<(string Chain, ulong Base, int Size)>
+        {
+            ($"0x{moduleOffset:X},{Csv(derefOffsets)}", root, structWindow),
+        };
+        var seen = new HashSet<ulong> { root };
+        var header = new byte[structWindow];
+        if (mem.TryReadBytes(root, header, structWindow))
+        {
+            for (int off = 0; off + 8 <= structWindow; off += 8)
+            {
+                ulong ptr = BitConverter.ToUInt64(header, off);
+                if (ptr is > 0x10000 and < 0x7FFF_FFFF_FFFF && (ptr & 7) == 0 && seen.Add(ptr))
+                {
+                    var probe = new byte[subWindow];
+                    if (mem.TryReadBytes(ptr, probe, subWindow))
+                        regions.Add(($"0x{moduleOffset:X},{Csv(derefOffsets)},0x{off:X},<field>", ptr, subWindow));
+                }
+                if (regions.Count > 128) break;
+            }
+        }
+
+        int iTarget = (int)target;
+        Console.WriteLine($"Searching struct + {regions.Count - 1} sub-object(s) for {target:G6} (int {iTarget})…\n");
+        int hits = 0;
+        foreach (var (chain, b, size) in regions)
+        {
+            var buf = new byte[size];
+            if (!mem.TryReadBytes(b, buf, size)) continue;
+            int n = size / 4;
+            for (int i = 0; i < n; i++)
+            {
+                float f = BitConverter.ToSingle(buf, i * 4);
+                int iv = BitConverter.ToInt32(buf, i * 4);
+                if (f != target && iv != iTarget) continue;
+
+                int off = i * 4;
+                // Show a few neighbors to reveal a current/max pair.
+                var nb = new List<string>();
+                for (int j = Math.Max(0, i - 2); j <= Math.Min(n - 1, i + 3); j++)
+                {
+                    float nf = BitConverter.ToSingle(buf, j * 4);
+                    string mark = j == i ? "*" : " ";
+                    nb.Add($"{mark}+0x{j * 4:X}={(nf == MathF.Round(nf) && MathF.Abs(nf) < 1e6 ? ((int)nf).ToString() : nf.ToString("G4"))}");
+                }
+                string chainForField = chain.Replace("<field>", $"0x{off:X}");
+                Console.WriteLine($"  0x{b + (ulong)off:X}  chain[{chainForField}]");
+                Console.WriteLine($"      neighbors: {string.Join("  ", nb)}");
+                hits++;
+                if (hits >= 60) { Console.WriteLine("  …(stopping at 60)"); return; }
+            }
+        }
+        if (hits == 0)
+            Console.WriteLine("  (not found — try the other value of the pair, or a bigger window)");
+    }
+
+    private static string Csv(int[] offs) => string.Join(",", offs.Select(o => "0x" + o.ToString("X")));
+
+    /// <summary>
     /// Walk to the struct pointer: start at module+offset, dereference, then dereference through
     /// EVERY given offset (unlike <see cref="PointerChain"/>, whose last offset is a plain add).
     /// For fuel that's moduleOffset 0x2AA17F0, derefs [0x28] → the vehicle struct pointer, with

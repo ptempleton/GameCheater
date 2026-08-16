@@ -204,6 +204,36 @@ if (args is ["--vehicle-scan", var vsproc, var vsmod, var vsoffs, ..])
     return;
 }
 
+// Struct find: `--struct-find <process|pid> <moduleOffsetHex> <derefOffsetsCsv> <value> [structWin] [subWin]`
+// — search a known struct + its sub-objects for a value (e.g. engine integrity 59). Prints the
+// chain to each hit plus neighbors, so a current/max pair stands out.
+if (args is ["--struct-find", var sfproc, var sfmod, var sfoffs, var sfval, ..])
+{
+    if (!FindWrites.TryParseAddress(sfmod, out ulong sfModuleOffset))
+    {
+        Console.WriteLine($"'{sfmod}' isn't a hex module offset.");
+        return;
+    }
+    int[] sfDerefs = sfoffs.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+        .Select(s => FindWrites.TryParseAddress(s, out ulong v) ? (int)v : 0)
+        .ToArray();
+    if (!float.TryParse(sfval, out float sfTarget))
+    {
+        Console.WriteLine($"'{sfval}' isn't a number.");
+        return;
+    }
+    int sfStructWin = args.Length > 5 && FindWrites.TryParseAddress(args[5], out ulong sw4) ? (int)sw4 : 0x800;
+    int sfSubWin = args.Length > 6 && FindWrites.TryParseAddress(args[6], out ulong sw5) ? (int)sw5 : 0x400;
+
+    using var mem = int.TryParse(sfproc, out int sfpid)
+        ? ProcessMemory.AttachToId(sfpid)
+        : ProcessMemory.Attach(sfproc);
+    if (mem is null) { Console.WriteLine($"{sfproc} is not running (Windows only)."); return; }
+    Console.WriteLine($"Attached to {mem.Process.ProcessName} (pid {mem.Process.Id}).\n");
+    StructDiff.Find(mem, sfModuleOffset, sfDerefs, sfStructWin, sfSubWin, sfTarget);
+    return;
+}
+
 // Pointer scan: `--pointer-scan <process|pid> <hexAddress> [maxDepth] [maxOffset]` — find static
 // pointer chains that resolve to a heap address, so a value cheat survives relaunches. Then
 // `--pointer-verify <process|pid> <hexAddress>` after a restart keeps only the chains that hold.
