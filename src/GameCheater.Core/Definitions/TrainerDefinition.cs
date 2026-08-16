@@ -25,15 +25,21 @@ public sealed class TrainerDefinition
     public List<CheatDefinition> Cheats { get; set; } = new();
 }
 
-/// <summary>One cheat: either a value freeze/set or a code patch.</summary>
+/// <summary>One cheat: a value freeze/set, code patch, or composite of other named cheats.</summary>
 public sealed class CheatDefinition
 {
     public string Name { get; set; } = "";
     public string Category { get; set; } = "General";
     public string? Description { get; set; }
 
-    /// <summary>"freeze" (value write) or "patch" (code bytes).</summary>
+    /// <summary>"freeze" (value write), "patch" (code bytes), or "composite" (member toggles).</summary>
     public string Type { get; set; } = "freeze";
+
+    /// <summary>Names of cheats toggled by a composite definition.</summary>
+    public List<string>? Members { get; set; }
+
+    /// <summary>Hide a composite's members from the cheat list while keeping them loaded internally.</summary>
+    public bool HideMembers { get; set; }
 
     // --- freeze fields ---
     /// <summary>byte | short | int | long | float | double (freeze only).</summary>

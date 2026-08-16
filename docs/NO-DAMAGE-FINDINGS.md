@@ -1,155 +1,275 @@
-# SnowRunner "No Vehicle Damage" — full investigation findings
+# SnowRunner damage investigation
 
-Handoff for whoever picks this up next. **Fuel is solved and published to the cheats repo (works
-in the app via Refresh; the embedded `GameCatalog` default is still a placeholder). No Damage is
-not solved.** This documents everything learned so far so you don't repeat the dead ends. Tested
-live against SnowRunner (Steam, no EAC/BattlEye) over a long session.
+Tested against SnowRunner on Steam in single-player. Memory reads and value freezes work without
+an anti-cheat bypass; keep all testing offline.
 
-## The goal
+## Current status
 
-Freeze or patch vehicle component integrity so the truck takes no damage. SnowRunner shows **5
-components** as `current/max`: **tires (x/6), fuel tank (x/50), engine (x/180), transmission
-(x/180), suspension (x/200)**. WeMod/WAND ship this as a user-mode trainer, so **it is
-user-mode-doable** — no kernel driver required.
+- **Engine, transmission, fuel-tank, and suspension damage are solved.** SnowRunner stores
+  accumulated damage as 4-byte integers:
+  displayed integrity = component maximum - accumulated damage.
+- The built-in **No Engine Damage**, **No Transmission Damage**, **No Fuel Tank Damage**, and
+  **No Suspension Damage** cheats freeze their accumulators at zero.
+- Clients with composite-cheat support expose one visible **No Vehicle Damage (except tires)**
+  toggle. It transactionally controls those four cheats while keeping the component freezes
+  loaded but hidden from the cheat list. If a
+  member fails to enable, the master rolls back members it already enabled and reports the
+  failing name.
+- Fuel is also solved separately.
+- Tires remain unsolved. Do not describe the present cheats as full
+  “No Vehicle Damage.”
 
-## What works (context you can rely on)
+## Authored damage chains
 
-- **Memory read/write is completely unguarded.** The value scanner, `--poll`, and value-freeze
-  (`--freeze`, the app's Test Freeze) all work fine and never trip anything. Only *debugger*
-  operations trip anti-tamper. This is why fuel = a plain value freeze.
-- **Fuel cheat (solved + published):** range-scan the fuel float → freeze. Durable pointer chain
-  `SnowRunner.exe+0x2AA17F0 → +0x28 → +0x5E8` (final offset = fuel field in the vehicle struct).
-  Published to the GameCheater-cheats repo as `games/snowrunner.json`; confirmed working in the app
-  after Refresh. (The app's embedded `GameCatalog.BuildSnowRunner` default is still a placeholder.)
-- **The "vehicle struct":** `SnowRunner.exe+0x2AA17F0` is a static pointer; `+0x28` derefs to the
-  **current active vehicle struct**. Fuel is at `+0x5E8` inside it. This struct **RELOCATES**
-  during play (definitely on recover-to-garage; that's why fuel needs `resolveEachTick`). Its
-  base changed across observations: `0x2537BA38350`, `0x2537C184210`, `0x2538703D810`,
-  `0x24C7AD…` (different pids/recovers). Component-damage-correlated values live in this struct
-  and in **sub-objects it points to** (pointer fields at struct `+0x58/+0x68/+0xA0/+0xE8/+0x110/
-  +0x200/+0x208/+0x210/+0x218/+0x220/+0x248/+0x250/+0x258/+0x260/+0x268/…`).
+    Engine:
+    SnowRunner.exe+0x2A8EDD8 -> +0x8 -> +0x150 -> +0x38
 
-## The core problem: every findable value is a MIRROR
+    Transmission:
+    SnowRunner.exe+0x2A8EDD8 -> +0x8 -> +0x148 -> +0x38
 
-The single blocking finding: **we can find dozens of values that equal the displayed integrity
-and track it as the engine is damaged, but freezing ANY of them does not change the on-screen
-readout or stop damage.** They are all display/mirror copies; the authoritative value the game
-reads is upstream and not reachable by scanning the fuel struct.
+    Fuel tank:
+    SnowRunner.exe+0x2A8EDD8 -> +0x8 -> +0x158 -> +0x38
 
-Concretely, with the engine at various levels we froze all of these — **readout never budged**:
+    Suspension:
+    SnowRunner.exe+0x2A8EDD8 -> +0x8 -> +0x160 -> +0x38
 
-| Representation | Example (engine level) | Chain / address | Result |
-|---|---|---|---|
-| 0–1 fraction | `1→0.75`, `1→0.6` seen in vehicle-scan | struct sub-objects | mirror |
-| fraction `0.349` (63/180) | `[0x28, 0x58, 0xA4]` | struct sub-object | froze→1.0, readout stayed 63 |
-| fraction `0.6039` (108/180) | `[0x28, 0x1030]` (main struct, has `1.0` neighbors) | mirror, stayed 108 |
-| int `108` | `[0x28, 0x560, 0x610]` | froze→180, stayed 108 |
-| int mirror (129→…) | whole-mem scan, one survivor | froze→180, stayed 63 |
+Type: int32
 
-Also note a **red-herring cluster**: struct-find for `~0.6` returns dozens of chains all pointing
-at the same few addresses with identical neighbor ramp `0.2988, 0.4482, 0.5977, 0.7471, 0.8964`
-(multiples of ~0.1494) — that's a shared **UV/gradient lookup table**, not integrity. Ignore it.
+Frozen value: zero
 
-### Why whole-memory scanning fails for damage (but worked for fuel)
+Runtime behavior: resolve the chain every freeze tick because the active vehicle object can move.
 
-Component integrity lives in the **relocating** struct/sub-objects. The app's value scanner
-tracks **fixed absolute addresses**; when the struct moves, those addresses go stale and the
-value "disappears" from the candidate set. So:
+Four equivalent static roots survived the same relaunch checks:
 
-- Exact/range narrowing across a damage event → **0 candidates** (the address that held the old
-  value now holds unrelated data after the struct moved).
-- Unknown → decreased/unchanged narrowing → converges to **noise** (physics floats that happened
-  to decrease and stay), never the integrity value. A 168-candidate export had **no value near
-  the integrity fraction (0.35) or the raw number (63)** at all.
+    SnowRunner.exe+0x2A8EDE0 -> +0x8 -> +0x150 -> +0x38
+    SnowRunner.exe+0x2A8EDC8 -> +0x20 -> +0x150 -> +0x38
+    SnowRunner.exe+0x2AA1508 -> +0x98 -> +0x150 -> +0x38
+    SnowRunner.exe+0x2A926F8 -> +0x18 -> +0x18 -> +0x150 -> +0x38
 
-Fuel worked because — apparently — fuel's authoritative field is genuinely in this struct at a
-stable offset. Damage's authoritative field is not (or the struct is a UI/cache copy for damage).
+The first chain is authored because it is one of the shortest survivors.
 
-### Storage representation notes
+## Live validation
 
-- Integrity is a **0–1 fraction internally**, displayed as `round(fraction × maxInt)` where
-  maxInt is 180 (engine/transmission), 200 (suspension), 50 (fuel tank), 6 (tires). E.g. engine
-  63/180 stored as `0.34895` (≈ 62.8/180 — sub-integer precision, display rounds up to 63).
-- Raw ints matching the displayed number DO appear (`160`, `25`, `108`) but inconsistently
-  (searching `152` found nothing while `160` did), and freezing them doesn't drive the display.
+The value was found by searching for **damage increasing**, rather than integrity decreasing:
 
-## Anti-tamper: what's beaten and what isn't
+1. Engine 167/180 means accumulated damage 13.
+2. First exact int scan for 13.
+3. After a hit, engine 152/180 means damage 28; narrow to exact 28.
+4. Set the authoritative survivor to zero; the display immediately returned to 180/180.
+5. With it frozen at zero, another collision left the engine at 180/180.
 
-Three layers, tested live:
+The first authoritative address was 0x24BF48B5BD8. After restarting, a new scan found
+0x2876B74A9A8; five pointer paths from the first session resolved to it. After another restart,
+all five paths independently converged on 0x2BCE7E95A58, whose int32 value was zero. The raw
+addresses changed as expected under ASLR/object relocation; the pointer paths survived.
 
-1. **PEB attach-detection — BEATEN.** A bare `DebugActiveProcess` self-exits the game (it polls
-   `PEB.BeingDebugged`). `Core/Debugging/AntiDebug` clears it on attach + every loop; the game
-   then survives a debugger attach indefinitely (`--anti-debug-test` ran 20s clean).
-2. **Hardware-breakpoint detection — NOT beaten (yet).** Setting a HW write breakpoint (`WriteWatch`
-   / `--find-writes`) self-exits the game within ~10s even with PEB cleared. The game reads its
-   own Dr0–Dr7 (via `GetThreadContext`/`NtGetContextThread`) and exits if any are set.
-3. **Page-protection detection — NOT beaten.** The page-guard find-what-writes
-   (`PageGuardWatch` / `--find-writes-guard`, which uses NO debug registers) ALSO self-exits the
-   game — **3/3 times, with 0 page-faults captured and no PEB flag set**. So SnowRunner appears
-   to detect the page-protection change on its own memory too (a separate integrity check).
+Transmission followed the same pattern: 177/180, 175/180, and 172/180 narrowed the accumulated
+damage integer through 3, 5, and 8 to five candidates. Freezing 0x2BCE734D688 at its current value
+stopped further loss; setting it to zero restored 180/180 and another collision left it at
+180/180. Its pointer scan found the same durable static roots as engine, with sibling offset
+0x148 instead of 0x150.
 
-Net: **both driver-free find-what-writes techniques are currently detected.** Tracing a mirror to
-its authoritative source (the whole point) is therefore blocked until one of them is made stealthy.
+Suspension required a stricter restart check. In the first session, 100/200 then 35/200 narrowed
+damage from 100 to 165; 0x2BCE734D908 held the display and zero restored 200/200. The first
+shortlisted paths later resolved to the wrong value and were rejected. In a fresh session,
+50/200 then 36/200 narrowed damage from 150 to 164; 0x25CF580F288 held and restored the display.
+After another SnowRunner restart the suspension read 184/200, so expected damage was 16. Eleven
+saved paths converged on 0x1D86F641F28 and read exactly 16. The authored path uses the same durable
+root as engine and transmission, with sibling offset 0x160.
 
-## The path forward (what I was mid-build on)
+Fuel-tank damage used maximum 50. Readings 45/50, 39/50, and 35/50 narrowed accumulated damage
+through 5, 11, and 15 to 0x1D85854BB88. Freezing its current value held 35/50; zero restored
+50/50 and blocked another hit. After restart the tank read 42/50, so expected damage was 8.
+Four saved paths converged on 0x144F8C2A148 and read exactly 8. The durable sibling offset is
+0x158.
 
-WeMod does it user-mode, so a driver-free route exists. The two live options:
+## Exact procedure: discover another damage component
 
-1. **Debug-register hider (ScyllaHide technique) — HALF BUILT, see `Core/Debugging/
-   DebugRegisterHider.cs`.** Inline-hooks `ntdll!NtGetContextThread` INSIDE SnowRunner with an
-   injected detour that runs the real syscall then zeroes Dr0–Dr7 in the returned CONTEXT when
-   `CONTEXT_DEBUG_REGISTERS` was requested. Our own reads (through our un-hooked ntdll) still see
-   the real registers, so `WriteWatch` keeps working; the game's self-check sees clean. **Status:
-   compiles, NOT wired into `WriteWatch`, NOT tested.** Next steps:
-   - Test the hook on `--write-target` first (install, confirm the process still runs and
-     `GetThreadContext` still returns; the .NET CLR calls `NtGetContextThread`, so a bad detour
-     will crash it — good canary).
-   - Wire it into `WriteWatch.Start` (install hider right after `DebugActiveProcess` + PEB clear,
-     before arming breakpoints; dispose in teardown before detach).
-   - Then run `--find-writes` on a damage **mirror** (e.g. resolve `[0x28, 0x1030]` to an absolute
-     address and watch it). The writer instruction's **register snapshot** (or the instruction it
-     copies from) points at the **authoritative** value. `GuardHit.DescribeRegisters()` /
-     `WriterHit` already capture context.
-   - CAVEAT the hook doesn't cover: `NtQueryInformationProcess(ProcessDebugPort/DebugObjectHandle)`
-     (kernel-truth debug port). If SnowRunner also checks that, you'd need to hook that too (same
-     technique, different stub) — but it tolerated our attach, so it may not.
-   - Page-protection detection is separate and does NOT affect the HW-breakpoint path (no page is
-     stripped), so the DR hider + HW `find-writes` is the cleaner bet than fixing page-guard.
+### 1. Prepare the session
 
-2. **Find the damage subsystem's root pointer.** The authoritative integrity is in a different
-   object hierarchy than the fuel struct. If you can find a static pointer to the "vehicle
-   simulation / damage manager" object, pointer-scan the authoritative value directly and freeze
-   it (no debugger needed → ships clean). Unknown how to find that root without find-writes.
+1. Run SnowRunner in single-player/offline mode.
+2. In GameCheater, select **SnowRunner**, click **Start Engine**, and open **Capture**.
+3. Click **Reset**, select Type **int**, and make sure the bottom **save value
+   (blank=current)** box is empty.
+4. Protect already-solved components from collateral damage by enabling their authored cheats.
+   Do not enable a cheat for the component currently being measured.
+5. Record the target component's maximum and current readings.
 
-## Once you have the authoritative value/instruction
+### 2. Search accumulated damage
 
-- If it's a freezable value: author it like fuel (freeze + `resolveEachTick` pointer chain,
-  pointer-scan for durability). WeMod likely does exactly this.
-- If it's a code patch: NOP the damage-apply instruction, ship as a durable AOB `PatchCheat`.
-  Runtime never attaches a debugger, so no anti-tamper at play — only *finding* it needs the hook.
-- Repeat for all 5 components (they're likely siblings in the same structure at adjacent offsets).
+Calculate:
 
-## Tools available (all `GameCheater.Cli`, Administrator, single-player)
+    accumulated damage = maximum - current
 
-- `--find-writes <pid> <addr> [size]` — HW-breakpoint find-what-writes (detected on SnowRunner).
-- `--find-writes-guard <pid> <addr> [size]` — page-guard version (also detected on SnowRunner;
-  works on unprotected games). Dumps writer registers with `r <n>`.
-- `--struct-find <pid> <moduleOffset> <derefsCsv> <value> [structWin] [subWin] [--tol <t>]` —
-  search the vehicle struct + sub-objects for a value (exact, or `--tol` for fraction matching),
-  prints each hit's chain + neighbors. THE most useful tool for this problem.
-- `--struct-diff` / `--vehicle-scan` — churn-filtered field diff on an in-game event.
-- `--freeze-chain <pid> <moduleOffset> <offsetsCsv> <type> <value> [secs]` — freeze via a pointer
-  chain re-resolved each tick (follows the moving struct). THE way to test a struct-find hit.
-- `--freeze <pid> <addr> <type> <value> [secs]`, `--poll <pid> <addr> <size> [secs]`.
-- `--bisect <pid> <candidatesFile> <start|stopped|dropping>` + the app's **Export** button —
-  binary-search a candidate cluster by freezing halves (safety-filters non-integrity values).
-  Not useful here since whole-mem scans only find mirrors, but solid for moving-address-free values.
-- `--pointer-scan` / `--pointer-verify` — durable pointer chains.
+For example, transmission 177/180 means accumulated damage 3.
 
-## Key takeaways for the next attempt
+1. Enter the calculated damage in the top value box and click **First Scan**.
+2. Damage only the target component again and record its new reading.
+3. Recalculate accumulated damage.
+4. Enter the new number in **exact or 179-181**, then click **= value**.
+5. Repeat the damage, calculation, and **= value** narrowing until only a small candidate list
+   remains. The transmission sequence was 3, then 5, then 8, leaving five candidates.
 
-1. Don't bother re-scanning whole memory for damage — it only finds mirrors (moving struct).
-2. Use `--struct-find` with the fraction (`displayed ÷ maxInt`) to enumerate copies in the struct,
-   and `--freeze-chain … 1.0` to test each. All tested so far are mirrors → the authoritative one
-   is NOT in the fuel struct. You likely need find-writes (via the DR hider) or the damage root.
-3. The DR hider (`DebugRegisterHider.cs`) is the highest-leverage unfinished work.
+Use exact values rather than **+ increased** whenever the displayed component reading is known.
+Exact narrowing discards unrelated values that happened to increase at the same time.
+
+### 3. Identify the authoritative candidate safely
+
+Test one candidate at a time:
+
+1. Confirm **save value (blank=current)** is blank.
+2. Select one candidate and click **Test Freeze**. Blank freezes the candidate at its existing
+   value; it does not write zero.
+3. Damage the target component once.
+4. If its displayed integrity decreases, click **Unfreeze** and test the next candidate.
+5. If its displayed integrity does not decrease, leave that candidate selected and copy its
+   address with **Copy address**.
+
+Selecting another candidate now automatically unfreezes the previous test and clears the value
+box. Still use **Unfreeze** explicitly between candidates so the test state is obvious.
+
+### 4. Confirm zero is the correct authored value
+
+Only do this after a candidate has stopped damage while frozen at its current value:
+
+1. Click **Unfreeze**.
+2. Keep the confirmed candidate selected.
+3. Enter 0 in **save value (blank=current)** and click **Test Freeze**.
+4. The component should immediately return to its maximum.
+5. Damage it again. It must remain at maximum.
+
+If setting zero does not restore the display, unfreeze immediately and do not pointer-scan that
+candidate.
+
+### 5. Find durable pointer paths
+
+Copy the confirmed address and find SnowRunner's PID:
+
+    Get-Process -Name SnowRunner
+
+From the repository root, run:
+
+    dotnet run --project src/GameCheater.Demo -- --pointer-scan <pid> <address> 5 800
+
+The address may be supplied with or without 0x. Pointer scan is read-only, but it replaces
+pointer-paths.json; preserve that file first if another unresolved component scan is in progress.
+
+### 6. Verify after relaunch
+
+1. Restart SnowRunner normally.
+2. Get its new PID.
+3. Resolve every saved path without writing memory:
+
+       dotnet run --project src/GameCheater.Demo -- --pointer-resolve <newPid>
+
+4. Prefer paths that converge on one address and show a plausible accumulated-damage int32.
+5. Verify that address and discard paths that do not reach it:
+
+       dotnet run --project src/GameCheater.Demo -- --pointer-verify <newPid> <newAddress>
+
+6. Repeat after another relaunch when possible. Choose a short survivor rooted in
+   SnowRunner.exe. Never store the raw heap address from Capture.
+
+If the saved paths do not converge, rediscover the authoritative address with the exact scan and
+run pointer verification against it. Do not guess which resolved address is correct.
+
+### 7. Author the built-in cheat
+
+Add a FreezeCheat<int> to GameCatalog.BuildSnowRunner. For transmission:
+
+    t.Add(new FreezeCheat<int>(
+        Resolve.Pointer(0x2A8EDD8, 0x8, 0x148, 0x38),
+        value: 0,
+        freeze: true,
+        resolveEachTick: true)
+    {
+        Name = "No Transmission Damage",
+        Category = "Vehicle",
+        Description = "Keeps the active truck's accumulated transmission damage at zero.",
+    });
+
+Keep resolveEachTick enabled because switching/recovering vehicles can relocate the active
+objects. Build with warnings as errors and run the formatter gate before handing off:
+
+    dotnet build GameCheater.slnx -c Release -warnaserror
+    dotnet format --verify-no-changes
+
+## Capture safety lesson
+
+The three-candidate scan contained two decoys. A stale zero left in the capture value box was
+applied while testing those candidates and SnowRunner crashed. The subtraction was correct; the
+unsafe part was writing zero to an unverified decoy.
+
+The capture UI now clears both the temporary freeze and the value box when candidate selection
+changes. During manual discovery:
+
+- Leave the value box blank when testing an unknown candidate; blank means freeze its current value.
+- Only write a chosen value after the candidate has proved that it controls the display.
+- Prefer --pointer-resolve for relaunch validation; it reads saved chains without writing memory.
+
+## Why the earlier integrity search failed
+
+Earlier work searched for the displayed current value or a 0-1 integrity fraction. It found many
+UI/cache copies. Freezing representative copies did not affect the display, which led to the
+incorrect conclusion that every scannable damage value was a mirror.
+
+The authoritative field uses the opposite representation: accumulated damage starts at zero and
+increases on impact. Freezing that value at zero is both simpler and safer than fighting derived
+integrity copies.
+
+## Tire investigation: known unsafe dead ends
+
+The tire display is usable tires / total tires, not a normal current/max integrity value.
+
+- Searching the disabled count from 2 through 6 produced one executable-module candidate,
+  0x7FF6D18EC1D0. Writing 1 did not repair a tire; it was a display mirror.
+- Searching the usable count from 6 through 3 lost every candidate, so the count is derived or
+  relocates as individual tire states change.
+- An unknown int scan against one tire flattened during the scan stopped at 142 candidates.
+  Most were float bit patterns misinterpreted as integers.
+- 0x2BB3030C0F8 read as int 51 and had static pointer paths, but writing zero crashed SnowRunner.
+  Never retry that address or treat pointer reachability alone as proof that a candidate is safe.
+
+Future tire work must remain read-only until an individual tire field is correlated across
+repair and damage states. Prefer a type-aware float scan or vehicle-structure diff; do not write
+to candidates selected only because their integer value looks plausible.
+
+## Anti-tamper findings
+
+These findings are still useful for future code tracing:
+
+- Clearing PEB.BeingDebugged allows a debugger attach to survive.
+- SnowRunner detects hardware debug registers used by WriteWatch.
+- It also detects the page-protection changes used by PageGuardWatch.
+- DebugRegisterHider is experimental and explicitly opt-in. Its target-process detour no longer
+  crashes the test process, but the visibility probe still sees the registers. Do not use
+  --hide-debug-registers against SnowRunner until that assertion passes.
+
+None of that machinery is needed for the solved damage accumulators.
+
+## Next discovery target
+
+Tires are the only remaining vehicle-damage component. They require the separate read-only
+approach documented above; do not reuse the accumulated component-damage recipe blindly because
+the HUD exposes usable tire count rather than individual tire integrity.
+
+## Composite definition
+
+The cheats repository can define a master toggle without duplicating pointer chains:
+
+    {
+      "name": "No Vehicle Damage (except tires)",
+      "category": "Vehicle",
+      "type": "composite",
+      "hideMembers": true,
+      "members": [
+        "No Engine Damage",
+        "No Transmission Damage",
+        "No Fuel Tank Damage",
+        "No Suspension Damage"
+      ]
+    }
+
+Member names are case-insensitive and must refer to concrete cheats in the same trainer
+definition. When tire damage is solved, add **No Tire Damage** to members and rename the master
+to **No Vehicle Damage**.

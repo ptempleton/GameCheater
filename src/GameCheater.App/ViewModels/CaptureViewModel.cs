@@ -123,6 +123,10 @@ public sealed class CaptureViewModel : ViewModelBase
         {
             if (SetField(ref _selectedCandidate, value))
             {
+                // A typed set-value is only safe for the candidate it was entered for. Carrying
+                // it to another row can write an arbitrary value into an unrelated address.
+                ClearTestFreeze(_trainer());
+                FreezeValue = "";
                 FreezeCommand.RaiseCanExecuteChanged();
                 SaveCommand.RaiseCanExecuteChanged();
                 OnPropertyChanged(nameof(CanCopyAddress));
@@ -239,6 +243,7 @@ public sealed class CaptureViewModel : ViewModelBase
     private void Unfreeze()
     {
         ClearTestFreeze(_trainer());
+        FreezeValue = "";
         Status = "Test freeze cleared.";
     }
 
@@ -289,6 +294,7 @@ public sealed class CaptureViewModel : ViewModelBase
         Candidates.Clear();
         CandidateCount = 0;
         SelectedCandidate = null;
+        FreezeValue = "";
         Status = "Scan reset.";
     }
 

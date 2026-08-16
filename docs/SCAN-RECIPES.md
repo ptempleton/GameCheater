@@ -123,10 +123,18 @@ lean on the vehicle-side values instead.
 | Cheat | Kind | Type | Diff | Recipe |
 |-------|------|------|------|--------|
 | Infinite fuel | freeze | float | 🟡 | **Solved & freezable.** Range-scan the fuel float (stored fractional — shows 189, stores ~188.7) → `--freeze` to confirm it holds the gauge → `--pointer-scan`/`--pointer-verify` for the durable chain `SnowRunner.exe+0x2AA17F0 → +0x28 → +0x5E8`. `resolveEachTick` (per-truck pointer). An earlier session wrongly concluded this was a non-freezable mirror — it had scanned a decoy address. |
-| No vehicle damage | — | — | 🔴 | **Not cracked.** Every findable integrity value is a display mirror; the authoritative value is upstream and SnowRunner detects find-what-writes. See `docs/NO-DAMAGE-FINDINGS.md`. |
+| No engine damage | freeze | int | 🟡 | **Solved.** Search accumulated damage (180 minus displayed current) as an increasing int; freeze the authoritative value at zero. Durable chain: `SnowRunner.exe+0x2A8EDD8 → +0x8 → +0x150 → +0x38`, re-resolved each tick. |
+| No transmission damage | freeze | int | 🟡 | **Solved.** Same accumulator method as engine. Chain: `SnowRunner.exe+0x2A8EDD8 → +0x8 → +0x148 → +0x38`, re-resolved each tick. |
+| No fuel tank damage | freeze | int | 🟡 | **Solved and restart-verified.** Search accumulated damage (50 minus displayed current). Chain: `SnowRunner.exe+0x2A8EDD8 → +0x8 → +0x158 → +0x38`, re-resolved each tick. |
+| No suspension damage | freeze | int | 🟡 | **Solved and restart-verified.** Search accumulated damage (200 minus displayed current). Chain: `SnowRunner.exe+0x2A8EDD8 → +0x8 → +0x160 → +0x38`, re-resolved each tick. |
+| No tire damage | — | — | 🔴 | **Unsolved.** The displayed usable/total count is derived. An unknown-int candidate at 0x2BB3030C0F8 crashed the game when written; never retry it. Use read-only per-tire struct/float correlation next. |
+| No vehicle damage master | composite | — | 🟢 | **Implemented for solved components.** Transactionally toggles engine, transmission, fuel-tank, and suspension protection. Explicitly labeled “except tires” until tire storage is solved. |
 | Infinite repair points | freeze | int/float | 🟢 | Damage a truck, use repair to change the value, decreased/increased narrowing. |
 | Infinite spare tires | freeze | int | 🟢 | Exact-scan the count shown, use one, `NextScanExact`. |
 | Freeze time of day | freeze | float | 🟡 | `FirstScanUnknown` → wait → `NextScanIncreased` repeatedly; freeze. |
+
+For the exact accumulated-damage Capture workflow, safe candidate test, pointer scan, relaunch
+verification, and authored C# example, see `docs/NO-DAMAGE-FINDINGS.md`.
 
 ## No Man's Sky
 Very scan-friendly. **Back up your save before large edits** (big inventory writes can corrupt).

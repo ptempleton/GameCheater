@@ -16,7 +16,8 @@ namespace GameCheater.Demo;
 /// </summary>
 public static class FindWrites
 {
-    public static void Run(ProcessMemory mem, ulong address, int size, CaptureSession session)
+    public static void Run(ProcessMemory mem, ulong address, int size, CaptureSession session,
+        bool hideDebugRegisters = false)
     {
         Console.WriteLine($"Target: 0x{address:X}  ({size} bytes)");
         if (mem.TryGetModuleContaining(address, out var module, out var moduleOffset))
@@ -27,10 +28,12 @@ public static class FindWrites
         PrintCurrentValue(mem, address, size);
 
         Console.WriteLine("\nAttaching as a debugger and arming a hardware write breakpoint...");
+        if (hideDebugRegisters)
+            Console.WriteLine("Debug-register hiding requested (target-side NtGetContextThread hook).");
         WriteWatch watch;
         try
         {
-            watch = WriteWatch.Start(mem, address, size);
+            watch = WriteWatch.Start(mem, address, size, hideDebugRegisters: hideDebugRegisters);
         }
         catch (Exception ex)
         {
@@ -53,6 +56,8 @@ public static class FindWrites
             Collect(watch, 10);
             if (watch.AntiDebugEngaged)
                 Console.WriteLine("(anti-debug detected and neutralised: the game's PEB debugger flag is being cleared.)");
+            if (watch.DebugRegistersHidden)
+                Console.WriteLine("(debug-register hiding active.)");
             Report(watch, patched);
             CommandLoop(watch, mem, session, patched);
         }
@@ -63,6 +68,8 @@ public static class FindWrites
             RestoreAll(mem, patched);
             Console.WriteLine("Clearing breakpoints and detaching...");
             watch.Dispose();
+            if (watch.TeardownError is { } teardownError)
+                Console.WriteLine($"WARNING: {teardownError}");
         }
     }
 
