@@ -390,6 +390,20 @@ if (args is ["--find-writes-guard", var gproc, var gaddr, ..])
     return;
 }
 
+// Bisect-freeze: `--bisect <process|pid> <candidatesFile> <start|stopped|dropping> [seconds]` —
+// binary-search a big candidate set to the ONE authoritative value by freezing half and watching
+// the readout. Export the candidates file from the app's Capture tab first.
+if (args is ["--bisect", var bproc, var bfile, var bverdict, ..])
+{
+    int bSeconds = args.Length > 4 && int.TryParse(args[4], out int bs) ? bs : 12;
+    using var mem = int.TryParse(bproc, out int bpid)
+        ? ProcessMemory.AttachToId(bpid)
+        : ProcessMemory.Attach(bproc);
+    if (mem is null) { Console.WriteLine($"{bproc} is not running (Windows only)."); return; }
+    BisectFreeze.Run(mem, bfile, bverdict.ToLowerInvariant(), bSeconds);
+    return;
+}
+
 // Test target for `--find-writes`: `--write-target` — a process with a known address and a
 // known writer, so the debugger can be verified without a game running.
 if (args is ["--write-target", ..])

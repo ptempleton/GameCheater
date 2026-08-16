@@ -24,35 +24,35 @@ Both feed the same runtime: every cheat — authored or loaded — becomes one t
 
 ## Architecture
 
-Four independently-testable layers:
+Independently-testable layers:
 
 | Layer | Project / namespace | What it does |
 |-------|--------------------|--------------|
 | 1. Memory access | `Core/Memory/ProcessMemory`, `Core/Native` | Attach, read/write typed values & bytes, enumerate modules, change page protection. The only code that touches Win32. |
 | 2. Address resolution | `Core/Memory/Signature`, `PointerChain`, `Resolve` | AOB signature scanning and multi-level pointer chains — how a cheat survives ASLR and patches by re-resolving at enable time. |
 | 3. Cheat runtime | `Core/Cheats/Cheat`, `FreezeCheat`, `PatchCheat`, `Trainer` | The heart: toggleable cheats with enable/disable/restore, a freeze loop, and clean teardown. `INotifyPropertyChanged` so a UI binds directly. |
-| 4. Discovery | `Core/Scanning/ValueScanner`, `Core/Debugging/WriteWatch` | Cheat-Engine-style value scanner so you *find* cheats live instead of looking them up — plus a real debugger ("find what writes to this address") that traces a value back to the instruction storing it, for values that can't be frozen. |
-
-The future UI (game picker + checkbox list + overlay) is a thin view over layer 3 —
-planned in **Avalonia** (builds and previews on macOS, ships identically to Windows;
-WPF would be Windows-only and unbuildable on the dev's Mac).
+| 4. Discovery | `Core/Scanning/ValueScanner` + `PointerScanner`, `Core/Debugging` | Cheat-Engine-style value/pointer scanner so you *find* cheats live instead of looking them up — plus find-what-writes debuggers and struct/anti-debug tooling for hard cases. |
+| 5. UI | `GameCheater.App` (Avalonia) | Game picker + Capture/Cheats tabs, a thin view over layers 3–4. Builds/previews on macOS, ships identically to Windows (WPF would be Windows-only). |
 
 ## Status
 
-- ✅ Memory-access layer, AOB + pointer resolution, cheat runtime, value scanner
-- ✅ Console dev harness (`GameCheater.Demo`) with an example SnowRunner definition
-- ⬜ CT loader (see the [Lua reality](#a-note-on-ct-tables) below)
-- ⬜ Per-game scan recipes
-- ⬜ Avalonia UI
-
-See the [milestones](../../milestones) for the phased roadmap (v0 → v4).
+- ✅ Memory-access layer, AOB + pointer resolution, cheat runtime, value scanner + pointer scanner
+- ✅ **Avalonia trainer UI** — game picker, Capture (scan) tab, Cheats tab, hotkeys, in-app Refresh
+- ✅ **CT loader** — static/pointer entries convert to built-in cheats; Lua/AA entries delegate to an
+  optional installed Cheat Engine (see the [CT support matrix](docs/TABLE-SOURCES.md))
+- ✅ Console dev harness / RE CLI (`GameCheater.Cli`): scanner, find-what-writes, pointer scan, etc.
+- ✅ Per-game scan recipes ([`docs/SCAN-RECIPES.md`](docs/SCAN-RECIPES.md))
+- 🔶 Distribution: authored definitions pulled from the `GameCheater-cheats` repo via Refresh
 
 ## Build & run
 
 ```bash
+dotnet run --project src/GameCheater.App       # the trainer UI (run as Administrator on Windows)
+.\publish.cmd                                  # -> publish\GameCheater.exe (single-file, win-x64)
+
 dotnet build -c Release                        # compiles on any OS
 dotnet format --verify-no-changes              # lint gate (must pass to merge)
-dotnet run --project src/GameCheater.Demo      # dev harness — only attaches on Windows
+dotnet run --project src/GameCheater.Demo -- --selftest   # RE CLI (only attaches on Windows)
 ```
 
 The core targets `net10.0` so it compiles on macOS/Linux for development; the Win32 memory
@@ -62,8 +62,11 @@ Administrator).
 ## Target games
 
 All chosen titles are single-player / co-op survival, sim, and adventure games — the genre
-that lives *outside* the kernel-anti-cheat world, so solo memory editing is viable and
-carries no ban risk.
+that lives *outside* the kernel-anti-cheat world, so solo memory editing is viable. Used
+**strictly offline** this is low-risk, but it is **never risk-free**: several of these games have
+online/co-op modes and anti-cheat, and memory editing can violate a game's terms of service. Only
+edit in single-player/offline sessions, and never against an EAC/BattlEye-protected session (see
+the per-game notes below and the SP-only flags).
 
 | Game | Anti-cheat | Notes |
 |------|-----------|-------|
@@ -80,16 +83,15 @@ carries no ban risk.
 
 ### A note on CT tables
 
-Research into existing tables for these specific games found that **essentially all of
-them are Lua-scripted / AOB-based, not static pointer lists.** A loader that only handles
-static tables would fail on nearly every real-world table here. Full `.CT` support for this
-game list therefore requires embedding a Lua interpreter and emulating Cheat Engine's
-auto-assembler API — an open-ended effort. This is why the **authored-trainer path is the
-primary product** and CT-loading is a later, deliberately-scoped bet.
+Existing tables for these specific games are **overwhelmingly Lua-scripted / AOB-based, not static
+pointer lists.** GameCheater's loader converts the **static/pointer** entries to built-in cheats
+and runs them itself; **Lua/AA** entries are classified and delegated to an **optional installed
+Cheat Engine** backend (there's no embedded Lua/AA interpreter). Because most real tables are
+Lua-heavy, the **authored-trainer path is the primary product**. See the full
+[CT support matrix and per-game sources](docs/TABLE-SOURCES.md).
 
-Only **FearLess Revolution** (and occasionally GuidedHacking / Nexus) distribute actual
-`.CT` files; FLiNG / Cheat Happens / PLITCH ship closed `.exe` trainers that a
-table loader can't open at all.
+Only **FearLess Revolution** (and occasionally GuidedHacking / Nexus) distribute actual `.CT`
+files; FLiNG / Cheat Happens / PLITCH ship closed `.exe` trainers that a table loader can't open.
 
 ## Legal & scope
 

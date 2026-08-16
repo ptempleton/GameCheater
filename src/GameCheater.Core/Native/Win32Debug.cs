@@ -151,4 +151,23 @@ internal static partial class Win32
     [LibraryImport("ntdll.dll")]
     public static partial int NtQueryInformationProcess(IntPtr process, int infoClass,
         out PROCESS_BASIC_INFORMATION info, uint infoLength, out uint returnLength);
+
+    // --- injecting the debug-register-hiding hook into the target ---
+
+    public const uint MEM_COMMIT_RESERVE = 0x3000;
+    public const uint MEM_RELEASE = 0x8000;
+
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    public static partial IntPtr VirtualAllocEx(IntPtr process, IntPtr address, nuint size,
+        uint allocationType, MemoryProtection protect);
+
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool VirtualFreeEx(IntPtr process, IntPtr address, nuint size, uint freeType);
+
+    [LibraryImport("kernel32.dll", SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
+    public static partial IntPtr GetModuleHandleW(string moduleName);
+
+    [LibraryImport("kernel32.dll", SetLastError = true, StringMarshalling = StringMarshalling.Utf8)]
+    public static partial IntPtr GetProcAddress(IntPtr module, string procName);
 }
