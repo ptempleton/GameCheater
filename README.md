@@ -24,18 +24,15 @@ Both feed the same runtime: every cheat — authored or loaded — becomes one t
 
 ## Architecture
 
-Four independently-testable layers:
+Independently-testable layers:
 
 | Layer | Project / namespace | What it does |
 |-------|--------------------|--------------|
 | 1. Memory access | `Core/Memory/ProcessMemory`, `Core/Native` | Attach, read/write typed values & bytes, enumerate modules, change page protection. The only code that touches Win32. |
 | 2. Address resolution | `Core/Memory/Signature`, `PointerChain`, `Resolve` | AOB signature scanning and multi-level pointer chains — how a cheat survives ASLR and patches by re-resolving at enable time. |
 | 3. Cheat runtime | `Core/Cheats/Cheat`, `FreezeCheat`, `PatchCheat`, `Trainer` | The heart: toggleable cheats with enable/disable/restore, a freeze loop, and clean teardown. `INotifyPropertyChanged` so a UI binds directly. |
-| 4. Discovery | `Core/Scanning/ValueScanner`, `Core/Debugging/WriteWatch` | Cheat-Engine-style value scanner so you *find* cheats live instead of looking them up — plus a real debugger ("find what writes to this address") that traces a value back to the instruction storing it, for values that can't be frozen. |
-
-The future UI (game picker + checkbox list + overlay) is a thin view over layer 3 —
-planned in **Avalonia** (builds and previews on macOS, ships identically to Windows;
-WPF would be Windows-only and unbuildable on the dev's Mac).
+| 4. Discovery | `Core/Scanning/ValueScanner` + `PointerScanner`, `Core/Debugging` | Cheat-Engine-style value/pointer scanner so you *find* cheats live instead of looking them up — plus find-what-writes debuggers and struct/anti-debug tooling for hard cases. |
+| 5. UI | `GameCheater.App` (Avalonia) | Game picker + Capture/Cheats tabs, a thin view over layers 3–4. Builds/previews on macOS, ships identically to Windows (WPF would be Windows-only). |
 
 ## Status
 
