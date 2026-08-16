@@ -53,11 +53,13 @@ A raw survivor address is invalid next launch. Convert it:
 
 ## When freezing doesn't work: `find-writes`
 
-Some values can't be frozen at all. The number you scanned turns out to be a **mirror** — the
-game recomputes it every frame from somewhere else, so writing to it changes nothing. This is
-exactly what SnowRunner's fuel gauge does, and it's why the trainer ships a debugger.
+Some values can't be frozen. The number you scanned turns out to be a **mirror** — the game
+computes it from an authoritative value elsewhere, so writing to the copy changes nothing.
+SnowRunner's per-component **vehicle damage** is like this (see `docs/NO-DAMAGE-FINDINGS.md`).
+Note that **fuel is NOT** such a case — a range-scanned fuel float freezes cleanly (below); reach
+for `find-writes` only after a freeze test proves the value is a mirror.
 
-The fix is to stop the *code* that consumes the value instead of fighting the number:
+The fix is to stop the *code* that writes the value instead of fighting the copy:
 
 ```powershell
 # 1. Value-scan until you have an address that tracks the value (a mirror is fine).
@@ -66,6 +68,10 @@ The fix is to stop the *code* that consumes the value instead of fighting the nu
 # 2. Ask which instructions write to it. Run as Administrator.
 .\find-writes.cmd SnowRunner 1F3A40C20 4
 ```
+
+> Caveat: some games (SnowRunner included) detect the debugger's hardware breakpoint and self-exit.
+> `find-writes` works on unprotected games; on protected ones you need the freeze path or the
+> anti-anti-debug work described in `docs/NO-DAMAGE-FINDINGS.md`.
 
 It attaches as a real debugger, puts a **hardware write breakpoint** on the address, and
 reports every instruction that stores there — with hit counts, because the consumer is
@@ -116,11 +122,11 @@ lean on the vehicle-side values instead.
 
 | Cheat | Kind | Type | Diff | Recipe |
 |-------|------|------|------|--------|
-| Infinite fuel | patch | — | 🔴 | **Not freezable** — confirmed live: the gauge value is recomputed every frame and the address the scanner finds is only a mirror, so freezing/setting it does nothing. Scan to that mirror anyway, then `find-writes` on it and NOP the consuming store. |
+| Infinite fuel | freeze | float | 🟡 | **Solved & freezable.** Range-scan the fuel float (stored fractional — shows 189, stores ~188.7) → `--freeze` to confirm it holds the gauge → `--pointer-scan`/`--pointer-verify` for the durable chain `SnowRunner.exe+0x2AA17F0 → +0x28 → +0x5E8`. `resolveEachTick` (per-truck pointer). An earlier session wrongly concluded this was a non-freezable mirror — it had scanned a decoy address. |
+| No vehicle damage | — | — | 🔴 | **Not cracked.** Every findable integrity value is a display mirror; the authoritative value is upstream and SnowRunner detects find-what-writes. See `docs/NO-DAMAGE-FINDINGS.md`. |
 | Infinite repair points | freeze | int/float | 🟢 | Damage a truck, use repair to change the value, decreased/increased narrowing. |
 | Infinite spare tires | freeze | int | 🟢 | Exact-scan the count shown, use one, `NextScanExact`. |
 | Freeze time of day | freeze | float | 🟡 | `FirstScanUnknown` → wait → `NextScanIncreased` repeatedly; freeze. |
-| No vehicle damage | patch | — | 🔴 | Find-what-writes on the damage/health float, NOP the write. Or just freeze health. |
 
 ## No Man's Sky
 Very scan-friendly. **Back up your save before large edits** (big inventory writes can corrupt).

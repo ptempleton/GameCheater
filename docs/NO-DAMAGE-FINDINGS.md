@@ -1,8 +1,9 @@
 # SnowRunner "No Vehicle Damage" — full investigation findings
 
-Handoff for whoever picks this up next. **Fuel is solved and shipped; No Damage is not.** This
-documents everything learned so far so you don't repeat the dead ends. Tested live against
-SnowRunner (Steam, no EAC/BattlEye) over a long session.
+Handoff for whoever picks this up next. **Fuel is solved and published to the cheats repo (works
+in the app via Refresh; the embedded `GameCatalog` default is still a placeholder). No Damage is
+not solved.** This documents everything learned so far so you don't repeat the dead ends. Tested
+live against SnowRunner (Steam, no EAC/BattlEye) over a long session.
 
 ## The goal
 
@@ -16,9 +17,10 @@ user-mode-doable** — no kernel driver required.
 - **Memory read/write is completely unguarded.** The value scanner, `--poll`, and value-freeze
   (`--freeze`, the app's Test Freeze) all work fine and never trip anything. Only *debugger*
   operations trip anti-tamper. This is why fuel = a plain value freeze.
-- **Fuel cheat (solved):** range-scan the fuel float → freeze. Durable pointer chain
+- **Fuel cheat (solved + published):** range-scan the fuel float → freeze. Durable pointer chain
   `SnowRunner.exe+0x2AA17F0 → +0x28 → +0x5E8` (final offset = fuel field in the vehicle struct).
-  Shipped to the GameCheater-cheats repo, confirmed working in the app.
+  Published to the GameCheater-cheats repo as `games/snowrunner.json`; confirmed working in the app
+  after Refresh. (The app's embedded `GameCatalog.BuildSnowRunner` default is still a placeholder.)
 - **The "vehicle struct":** `SnowRunner.exe+0x2AA17F0` is a static pointer; `+0x28` derefs to the
   **current active vehicle struct**. Fuel is at `+0x5E8` inside it. This struct **RELOCATES**
   during play (definitely on recover-to-garage; that's why fuel needs `resolveEachTick`). Its
