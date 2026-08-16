@@ -14,6 +14,9 @@ public sealed class CompositeCheat : Cheat
 
     public IReadOnlyList<Cheat> Members { get; }
 
+    /// <summary>Hide member cheats from presentation surfaces that support composite grouping.</summary>
+    public bool HideMembers { get; init; }
+
     public CompositeCheat(IEnumerable<Cheat> members)
     {
         Members = members.Distinct().ToArray();

@@ -54,6 +54,7 @@ public static class CompositeCheatSelfTest
                     {
                       "name": "Master",
                       "type": "composite",
+                      "hideMembers": true,
                       "members": ["First", "Second"]
                     },
                     {
@@ -77,7 +78,7 @@ public static class CompositeCheatSelfTest
             var trainer = TrainerDefinitionLoader.ToTrainer(
                 TrainerDefinitionLoader.Parse(json), out var skipped);
             Require(skipped.Count == 0);
-            Require(trainer.Cheats[0] is CompositeCheat { Members.Count: 2 });
+            Require(trainer.Cheats[0] is CompositeCheat { Members.Count: 2, HideMembers: true });
         });
 
         Console.WriteLine(failed == 0 ? "All composite cases passed." : $"{failed} composite case(s) FAILED.");

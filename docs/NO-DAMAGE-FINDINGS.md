@@ -10,8 +10,9 @@ an anti-cheat bypass; keep all testing offline.
   displayed integrity = component maximum - accumulated damage.
 - The built-in **No Engine Damage**, **No Transmission Damage**, **No Fuel Tank Damage**, and
   **No Suspension Damage** cheats freeze their accumulators at zero.
-- Clients with composite-cheat support also expose **No Vehicle Damage (except tires)**. It
-  transactionally toggles those four cheats while preserving their individual controls. If a
+- Clients with composite-cheat support expose one visible **No Vehicle Damage (except tires)**
+  toggle. It transactionally controls those four cheats while keeping the component freezes
+  loaded but hidden from the cheat list. If a
   member fails to enable, the master rolls back members it already enabled and reports the
   failing name.
 - Fuel is also solved separately.
@@ -260,6 +261,7 @@ The cheats repository can define a master toggle without duplicating pointer cha
       "name": "No Vehicle Damage (except tires)",
       "category": "Vehicle",
       "type": "composite",
+      "hideMembers": true,
       "members": [
         "No Engine Damage",
         "No Transmission Damage",

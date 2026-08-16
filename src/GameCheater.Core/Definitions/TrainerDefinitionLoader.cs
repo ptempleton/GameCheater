@@ -57,6 +57,7 @@ public static class TrainerDefinitionLoader
                 Name = c.Name,
                 Category = c.Category,
                 Description = c.Description,
+                HideMembers = c.HideMembers,
             };
         }
 

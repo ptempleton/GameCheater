@@ -218,7 +218,13 @@ public sealed class MainViewModel : ViewModelBase
             Status = $"{SelectedGame.Display} closed — detached.";
         };
 
-        foreach (var cheat in _trainer.Cheats)
+        var hiddenMembers = _trainer.Cheats
+            .OfType<CompositeCheat>()
+            .Where(composite => composite.HideMembers)
+            .SelectMany(composite => composite.Members)
+            .ToHashSet();
+
+        foreach (var cheat in _trainer.Cheats.Where(cheat => !hiddenMembers.Contains(cheat)))
             Cheats.Add(Wrap(cheat));
 
         Status = Cheats.Count > 0

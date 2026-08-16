@@ -38,6 +38,9 @@ public sealed class CheatDefinition
     /// <summary>Names of cheats toggled by a composite definition.</summary>
     public List<string>? Members { get; set; }
 
+    /// <summary>Hide a composite's members from the cheat list while keeping them loaded internally.</summary>
+    public bool HideMembers { get; set; }
+
     // --- freeze fields ---
     /// <summary>byte | short | int | long | float | double (freeze only).</summary>
     public string? ValueType { get; set; }
