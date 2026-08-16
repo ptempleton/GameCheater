@@ -92,9 +92,21 @@ public sealed class CaptureViewModel : ViewModelBase
             {
                 FreezeCommand.RaiseCanExecuteChanged();
                 SaveCommand.RaiseCanExecuteChanged();
+                OnPropertyChanged(nameof(CanCopyAddress));
             }
         }
     }
+
+    /// <summary>Enables the Copy button only when there's a candidate to copy.</summary>
+    public bool CanCopyAddress => SelectedCandidate is not null;
+
+    /// <summary>The selected candidate's address as a copyable hex string, in the same format
+    /// the list shows it (e.g. 0x22A6BA5FD18), or null if nothing is selected.</summary>
+    public string? SelectedAddressText => SelectedCandidate is { } c ? $"0x{c.Address:X}" : null;
+
+    /// <summary>Note in the status line that an address was copied. Clipboard access lives in the
+    /// view (it needs the window's TopLevel), so the view calls back here once the copy is done.</summary>
+    public void NotifyAddressCopied(string text) => Status = $"Copied {text} to the clipboard.";
 
     private async Task RunFirstScan(bool unknown)
     {
