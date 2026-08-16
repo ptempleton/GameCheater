@@ -53,10 +53,24 @@ public sealed class Signature
 
     public ulong? Scan(ProcessMemory memory, ulong start, ulong length)
     {
+        foreach (ulong hit in ScanAll(memory, start, length))
+            return hit;
+        return null;
+    }
+
+    /// <summary>
+    /// Every match in the window, lazily. Enumerating just the first two is how a generated
+    /// signature gets checked for uniqueness — an AOB that matches twice will patch the wrong
+    /// site sooner or later — and stopping early keeps that check cheap.
+    /// </summary>
+    public IEnumerable<ulong> ScanAll(ProcessMemory memory, ulong start, ulong length)
+    {
         // 64KB chunks with an overlap so a match straddling a chunk boundary isn't missed.
         const int chunk = 0x10000;
         int overlap = _bytes.Length - 1;
         var buffer = new byte[chunk];
+        bool any = false;
+        ulong last = 0;
 
         foreach (var (regionBase, regionSize) in memory.EnumerateReadableRegions(start, length))
         {
@@ -73,15 +87,24 @@ public sealed class Signature
                 int limit = want - _bytes.Length + 1;
                 for (int i = 0; i < limit; i++)
                 {
-                    if (Matches(buffer, i))
-                        return regionBase + (ulong)(offset + i);
+                    if (!Matches(buffer, i))
+                        continue;
+
+                    ulong hit = regionBase + (ulong)(offset + i);
+                    // The chunk overlap re-reads bytes we've already matched on, so skip
+                    // anything at or before the previous hit rather than reporting it twice.
+                    if (any && hit <= last)
+                        continue;
+
+                    any = true;
+                    last = hit;
+                    yield return hit;
                 }
 
                 if (want < chunk) break;
                 offset += chunk - overlap; // step back by overlap to catch boundary-straddling matches
             }
         }
-        return null;
     }
 
     private bool Matches(byte[] haystack, int at)

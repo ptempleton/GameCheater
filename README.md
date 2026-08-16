@@ -31,7 +31,7 @@ Four independently-testable layers:
 | 1. Memory access | `Core/Memory/ProcessMemory`, `Core/Native` | Attach, read/write typed values & bytes, enumerate modules, change page protection. The only code that touches Win32. |
 | 2. Address resolution | `Core/Memory/Signature`, `PointerChain`, `Resolve` | AOB signature scanning and multi-level pointer chains — how a cheat survives ASLR and patches by re-resolving at enable time. |
 | 3. Cheat runtime | `Core/Cheats/Cheat`, `FreezeCheat`, `PatchCheat`, `Trainer` | The heart: toggleable cheats with enable/disable/restore, a freeze loop, and clean teardown. `INotifyPropertyChanged` so a UI binds directly. |
-| 4. Discovery | `Core/Scanning/ValueScanner` | Cheat-Engine-style value scanner so you *find* cheats live instead of looking them up. |
+| 4. Discovery | `Core/Scanning/ValueScanner`, `Core/Debugging/WriteWatch` | Cheat-Engine-style value scanner so you *find* cheats live instead of looking them up — plus a real debugger ("find what writes to this address") that traces a value back to the instruction storing it, for values that can't be frozen. |
 
 The future UI (game picker + checkbox list + overlay) is a thin view over layer 3 —
 planned in **Avalonia** (builds and previews on macOS, ships identically to Windows;

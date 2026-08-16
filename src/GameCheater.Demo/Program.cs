@@ -13,6 +13,14 @@ using GameCheater.Demo;
 // Render UTF-8 so dashes/arrows don't garble in the Windows console.
 try { Console.OutputEncoding = System.Text.Encoding.UTF8; } catch { /* output redirected */ }
 
+// Decoder self-test: `--selftest` — verifies the x86-64 length decoder that "find what
+// writes" uses to identify (and NOP) the storing instruction. No game or OS needed.
+if (args is ["--selftest", ..])
+{
+    Environment.ExitCode = DecoderSelfTest.Run() == 0 ? 0 : 1;
+    return;
+}
+
 // Table inspection mode: `--ct <path>` parses a .CT and prints the classification report
 // (who runs each entry — our engine vs the CE backend). Works on any OS (no attach).
 if (args is ["--ct", var ctPath, ..])
@@ -139,6 +147,41 @@ if (args is ["--watch-code", var cproc, ..])
     Console.WriteLine($"Attached to {cproc}.exe.");
     var session = CaptureSession.Begin(mem, args.Length > 2 ? args[2] : null);
     CodeWatch.Run(mem, session);
+    WriteCaptures(session);
+    return;
+}
+
+// Test target for `--find-writes`: `--write-target` — a process with a known address and a
+// known writer, so the debugger can be verified without a game running.
+if (args is ["--write-target", ..])
+{
+    WriteTarget.Run(args.Length > 1 && int.TryParse(args[1], out int seconds) ? seconds : null);
+    return;
+}
+
+// Find what writes: `--find-writes <process|pid> <hex-address> [size] [game]` — attach as a
+// debugger, put a hardware write breakpoint on the address, and report which instructions
+// store to it. This is how code cheats get found for values that can't be frozen.
+if (args is ["--find-writes", var wproc, var waddr, ..])
+{
+    if (!FindWrites.TryParseAddress(waddr, out ulong address))
+    {
+        Console.WriteLine($"'{waddr}' isn't a hex address (expected e.g. 0x1F3A40C20 or 1F3A40C20).");
+        return;
+    }
+
+    int size = args.Length > 3 && int.TryParse(args[3], out int s) ? s : 4;
+
+    // A bare number is a pid — the name is ambiguous when two copies are running (and when
+    // the watcher is testing against another instance of itself).
+    using var mem = int.TryParse(wproc, out int wpid)
+        ? ProcessMemory.AttachToId(wpid)
+        : ProcessMemory.Attach(wproc);
+    if (mem is null) { Console.WriteLine($"{wproc} is not running (Windows only)."); return; }
+    Console.WriteLine($"Attached to {mem.Process.ProcessName} (pid {mem.Process.Id}).\n");
+
+    var session = CaptureSession.Begin(mem, args.Length > 4 ? args[4] : null);
+    FindWrites.Run(mem, address, size, session);
     WriteCaptures(session);
     return;
 }

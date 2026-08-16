@@ -39,11 +39,13 @@ so `gh pr merge` works once CI is green).
 - **Tables**: `.CT` parser/classifier/loader (static+pointer → cheats; Lua/AA → CE backend).
 - **CE backend** (`Core/Backend`): exists, but the owner prefers **not** to require Cheat
   Engine — treat as a fallback, not the primary path.
+- **Debugger** (`Core/Debugging`): find-what-writes — see below.
 - **Client**: the App builds to `GameCheater.exe` (WinExe). `.\publish.cmd` → single exe;
   or `dotnet run --project src/GameCheater.App` (run as admin to attach). Dev CLI
-  (`GameCheater.Cli`, the Demo project) has `--watch-code/--watch-values/--ce/--pull/--load-json/--ct`.
+  (`GameCheater.Cli`, the Demo project) has `--watch-code/--watch-values/--find-writes/`
+  `--write-target/--selftest/--ce/--pull/--load-json/--ct`.
 
-## Key finding — why the next task exists
+## Key finding that drove the debugger
 
 **SnowRunner fuel is NOT value-freezable.** The gauge value is recomputed every frame from an
 internal source; no writable float drives it (confirmed live: the scanner narrowed to a value
@@ -52,27 +54,52 @@ SnowRunner's real cheats are **code-based** (its community tables are AOB/Lua). 
 works fine for freezable values (money/counts/etc.), but **continuous consumables like fuel
 need a CODE PATCH** — stop the consumption instruction.
 
-## NEXT: build the "find what writes to an address" debugger (self-contained code patches)
+## DONE: the "find what writes to an address" debugger (`Core/Debugging`)
 
-Goal: make SnowRunner-class code cheats work without external tools.
+Self-contained; no Cheat Engine. `.\find-writes.cmd <process|pid> <hexAddress> [size] [game]`
+(Administrator). It attaches with `DebugActiveProcess`, runs a `WaitForDebugEvent` loop on a
+dedicated thread, and arms a **hardware write breakpoint** (Dr0–3 / Dr7) on **every** thread —
+including ones the game spawns later, since debug registers are per-thread. On each trap it
+reads `Rip`, decodes backwards to the storing instruction, and aggregates by writer with hit
+counts. In-session you can NOP a writer live (`n`), restore it (`r`), preview the durable AOB
+(`p`), or save it as a `patch` cheat (`s`) straight into a `games/<game>.json`.
 
-Design:
-1. Attach as a debugger: `DebugActiveProcess(pid)` + a dedicated thread running
-   `WaitForDebugEvent` / `ContinueDebugEvent`.
-2. Set a **hardware breakpoint** (debug registers Dr0–3, Dr7 = write, length) on the target
-   address, on every thread (`GetThreadContext`/`SetThreadContext`).
-3. On the write hit (`EXCEPTION_SINGLE_STEP`), read the thread's `Rip` = the instruction that
-   wrote the value = the consumption code.
-4. Report that instruction (address, bytes, surrounding **AOB**). NOP it → no consumption; and
-   emit it as a durable `PatchCheat` (AOB signature) so it survives restarts.
-5. Workflow: value-scan to an address that tracks the value (even a mirror), run
-   find-what-writes on it to locate the writer; for the *authoritative* value you may need to
-   chain (the copy-writer's source → the real value) — work it out live against the game.
+Pieces worth knowing:
 
-Caveats: **Windows-only**; attaching as a debugger pauses the game per event; single-player
-only; detach cleanly (`DebugActiveProcessStop`) so the game doesn't die; watch for anti-debug
-(SnowRunner is fine). **Build and test this ON Windows** against the live game — the Mac can
-only compile it, which makes iteration painfully slow.
+- `X64Decoder` — a minimal x86-64 **length** decoder (prefixes, REX, VEX/EVEX, all three
+  opcode maps, ModRM/SIB/disp/imm). It exists because a data breakpoint is a *trap*: the
+  reported `Rip` is the instruction *after* the store, and x86 can't be decoded backwards.
+  `FindWriterEndingAt` brute-forces it — decode forward from every earlier byte, keep the
+  chains that land exactly on `Rip`, take the one most chains agree on.
+  **`GameCheater.Cli --selftest` checks it against 49 reference encodings + 5 backward cases.
+  Run it after touching the decoder** — a one-byte length error NOPs into the next instruction.
+- `WriterPatch.Build` — generates the AOB, wildcarding **address-sized (≥4 byte) fields only**
+  across every instruction in the window (the loader rewrites those when a module rebases;
+  disp8/imm8 are stable and keep the pattern unique), then widens context until it matches
+  exactly once *in the writer's own module*. Flags writers in JIT/dynamic code as
+  session-only, since no AOB can re-find those.
+- Safety: `DebugSetProcessKillOnExit(false)` right after attach (so a trainer crash doesn't
+  take the game with it), and breakpoints are cleared from every thread **before**
+  `DebugActiveProcessStop` — a debug register left armed with no debugger attached raises an
+  unhandled exception and kills the game.
+
+Verified on Windows end-to-end against `GameCheater.Cli --write-target` (a built-in test
+process with a known address and two known writers, one module-resident and one JIT'd):
+correct instructions and lengths found, writes traced on a worker thread, live NOP stopped the
+writer, restore worked, target survived detach, and the emitted JSON round-trips through
+`--load-json`. **Not yet run against a real game** — that's the next step.
+
+## NEXT
+
+1. **Run it against SnowRunner fuel for real.** Value-scan to the mirror address, `find-writes`
+   on it, NOP the busiest writer, see if the drain stops. If the mirror's writer just copies
+   from elsewhere, chain: read its source operand, scan for that address, repeat. This is the
+   step that turns the tool into an actual shipped cheat.
+2. **Wire it into the Capture tab UI.** Right now it's CLI-only. The natural shape is a "Find
+   what writes" button on a candidate row → writer list → NOP/Save. Note `WriteWatch`'s
+   `WriterDiscovered` fires on the debug thread while the game is frozen, so the UI must
+   marshal and do nothing expensive in the handler.
+3. Hotkeys still need live validation (assign F1, toggle in-game).
 
 ## Build / run
 
@@ -82,7 +109,13 @@ dotnet run --project src/GameCheater.App     # UI; run as Administrator to attac
 .\publish.cmd                                # -> publish\GameCheater.exe
 dotnet build -c Release -warnaserror         # CI parity
 dotnet format --verify-no-changes            # lint gate
+dotnet run --project src/GameCheater.Demo -- --selftest   # x86-64 decoder reference tests
 ```
+
+**Lint gate on a Windows checkout:** `.editorconfig` sets `end_of_line = lf`, but git's
+`core.autocrlf=true` gives you a CRLF working tree, so `dotnet format --verify-no-changes`
+reports `ENDOFLINE` on *every* file locally. CI (Ubuntu, LF checkout) is unaffected. Filter it
+to see real findings: `dotnet format --verify-no-changes 2>&1 | grep -v ENDOFLINE`.
 
 Target games (all single-player-safe): SnowRunner, Palworld, No Man's Sky, Enshrouded,
 The Riftbreaker, Soulmask (EAC — offline only), Subnautica 2, Avatar (Denuvo), Hogwarts

@@ -51,6 +51,31 @@ public sealed class ProcessMemory : IDisposable
     }
 
     /// <summary>
+    /// Attach by process id. Needed whenever the name is ambiguous — two copies of the same
+    /// game, or the trainer watching another instance of itself during testing.
+    /// </summary>
+    public static ProcessMemory? AttachToId(int processId)
+    {
+        Process proc;
+        try
+        {
+            proc = Process.GetProcessById(processId);
+        }
+        catch (ArgumentException)
+        {
+            return null;   // not running
+        }
+
+        var handle = Win32.OpenProcess(Win32.ProcessAccess.Trainer, false, (uint)processId);
+        if (handle == IntPtr.Zero)
+            throw new InvalidOperationException(
+                $"OpenProcess failed for pid {processId} (err {Marshal.GetLastWin32Error()}). " +
+                "Run the trainer as Administrator.");
+
+        return new ProcessMemory(proc, handle);
+    }
+
+    /// <summary>
     /// Find the module that contains <paramref name="address"/> and express it as
     /// module + offset — the durable, ASLR-safe way to store a static address the scanner
     /// found. Returns false for heap addresses (those need a pointer scan instead).
@@ -70,6 +95,31 @@ public sealed class ProcessMemory : IDisposable
         }
         module = "";
         offset = 0;
+        return false;
+    }
+
+    /// <summary>
+    /// The module containing <paramref name="address"/> as a base+size window. An AOB has to
+    /// be scanned inside the module its target lives in — scanning the main module for code
+    /// that sits in a DLL (or in JIT-generated memory) silently finds nothing.
+    /// </summary>
+    public bool TryGetModuleRange(ulong address, out string module, out ulong moduleBase, out ulong moduleSize)
+    {
+        foreach (ProcessModule m in Process.Modules)
+        {
+            ulong b = (ulong)m.BaseAddress.ToInt64();
+            ulong size = (ulong)m.ModuleMemorySize;
+            if (address >= b && address < b + size)
+            {
+                module = m.ModuleName ?? "";
+                moduleBase = b;
+                moduleSize = size;
+                return true;
+            }
+        }
+        module = "";
+        moduleBase = 0;
+        moduleSize = 0;
         return false;
     }
 

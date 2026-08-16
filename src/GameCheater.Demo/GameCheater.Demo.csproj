@@ -8,6 +8,8 @@
     <LangVersion>latest</LangVersion>
     <RootNamespace>GameCheater.Demo</RootNamespace>
     <AssemblyName>GameCheater.Cli</AssemblyName>
+    <!-- The [LibraryImport] source generator emits unsafe marshalling stubs (same as Core). -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>
