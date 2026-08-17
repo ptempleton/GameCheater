@@ -42,7 +42,17 @@ Independently-testable layers:
   optional installed Cheat Engine (see the [CT support matrix](docs/TABLE-SOURCES.md))
 - ✅ Console dev harness / RE CLI (`GameCheater.Cli`): scanner, find-what-writes, pointer scan, etc.
 - ✅ Per-game scan recipes ([`docs/SCAN-RECIPES.md`](docs/SCAN-RECIPES.md))
-- 🔶 Distribution: authored definitions pulled from the `GameCheater-cheats` repo via Refresh
+- ✅ Distribution: authored definitions pulled from the `GameCheater-cheats` repo via Refresh
+
+## SnowRunner
+
+SnowRunner currently ships Infinite Fuel and one visible **No Vehicle Damage (except tires)**
+master. The master controls the confirmed engine, transmission, fuel-tank, and suspension
+accumulator freezes; tires remain the only unsolved vehicle-damage component.
+
+See [`docs/SNOWRUNNER.md`](docs/SNOWRUNNER.md) for usage, durable chains, validation evidence,
+definition delivery, build artifacts, safety limits, and troubleshooting. The raw investigation
+record remains in [`docs/NO-DAMAGE-FINDINGS.md`](docs/NO-DAMAGE-FINDINGS.md).
 
 ## Build & run
 
