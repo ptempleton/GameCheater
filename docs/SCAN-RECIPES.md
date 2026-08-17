@@ -117,6 +117,11 @@ NOPing into the middle of the next instruction.
 ---
 
 ## SnowRunner
+
+Current published behavior is documented in `docs/SNOWRUNNER.md`. Cheat-feed revision 6 exposes
+one visible **No Vehicle Damage (except tires)** composite and hides its four concrete damage
+members with `hideMembers`; the members remain loaded for runtime and teardown.
+
 Off-road sim. **Gotcha: money is stored save/server-side**, so it's unreliable to freeze —
 lean on the vehicle-side values instead.
 
@@ -128,7 +133,7 @@ lean on the vehicle-side values instead.
 | No fuel tank damage | freeze | int | 🟡 | **Solved and restart-verified.** Search accumulated damage (50 minus displayed current). Chain: `SnowRunner.exe+0x2A8EDD8 → +0x8 → +0x158 → +0x38`, re-resolved each tick. |
 | No suspension damage | freeze | int | 🟡 | **Solved and restart-verified.** Search accumulated damage (200 minus displayed current). Chain: `SnowRunner.exe+0x2A8EDD8 → +0x8 → +0x160 → +0x38`, re-resolved each tick. |
 | No tire damage | — | — | 🔴 | **Unsolved.** The displayed usable/total count is derived. An unknown-int candidate at 0x2BB3030C0F8 crashed the game when written; never retry it. Use read-only per-tire struct/float correlation next. |
-| No vehicle damage master | composite | — | 🟢 | **Implemented for solved components.** Transactionally toggles engine, transmission, fuel-tank, and suspension protection. Explicitly labeled “except tires” until tire storage is solved. |
+| No vehicle damage master | composite | — | 🟢 | **Published in revision 6.** One visible **No Vehicle Damage (except tires)** toggle transactionally controls engine, transmission, fuel-tank, and suspension protection; the four concrete members stay loaded but are hidden with `hideMembers`. |
 | Infinite repair points | freeze | int/float | 🟢 | Damage a truck, use repair to change the value, decreased/increased narrowing. |
 | Infinite spare tires | freeze | int | 🟢 | Exact-scan the count shown, use one, `NextScanExact`. |
 | Freeze time of day | freeze | float | 🟡 | `FirstScanUnknown` → wait → `NextScanIncreased` repeatedly; freeze. |

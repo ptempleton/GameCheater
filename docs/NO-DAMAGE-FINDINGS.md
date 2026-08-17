@@ -1,7 +1,11 @@
-# SnowRunner damage investigation
+# SnowRunner damage investigation record
 
 Tested against SnowRunner on Steam in single-player. Memory reads and value freezes work without
 an anti-cheat bypass; keep all testing offline.
+
+For normal use, current shipped behavior, definition delivery, build artifacts, and
+troubleshooting, see [SNOWRUNNER.md](SNOWRUNNER.md). This file preserves the detailed discovery
+evidence and exact reproduction procedure.
 
 ## Current status
 
@@ -12,9 +16,8 @@ an anti-cheat bypass; keep all testing offline.
   **No Suspension Damage** cheats freeze their accumulators at zero.
 - Clients with composite-cheat support expose one visible **No Vehicle Damage (except tires)**
   toggle. It transactionally controls those four cheats while keeping the component freezes
-  loaded but hidden from the cheat list. If a
-  member fails to enable, the master rolls back members it already enabled and reports the
-  failing name.
+  loaded but hidden from the cheat list. If a member fails to enable, the master rolls back
+  members it already enabled and reports the failing name.
 - Fuel is also solved separately.
 - Tires remain unsolved. Do not describe the present cheats as full
   “No Vehicle Damage.”
